@@ -21,10 +21,15 @@ import type {
 
 const BASE = "";
 import { readAccessToken } from './browserStorage';
+import { translateApiError } from '../i18n/apiErrors';
 
 function authHeaders(): Record<string, string> {
   const token = readAccessToken();
   return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
 }
 
 // ─── Generic fetch wrapper ────────────────────────────────
@@ -48,9 +53,8 @@ export async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> 
   }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    const known:Record<string,string>={'Authentication required':'需要有效的访问令牌','Remote access requires SPARKDASH_TOKEN':'远程访问需要配置 SPARKDASH_TOKEN','Spark not found':'找不到节点'};
     const detail=typeof body?.error==='string'?body.error:'';
-    throw new Error(known[detail]||detail||`请求失败（HTTP ${res.status}）`);
+    throw new ApiError(translateApiError(detail)||`请求失败（HTTP ${res.status}）`, res.status);
   }
   try{return await res.json();}
   catch{throw new Error(mutating?'服务响应格式异常，操作结果未确认，请先刷新状态。':'服务返回的数据格式异常，请稍后重试。');}
@@ -310,7 +314,16 @@ export function getShowcase(
     opts?.since != null && Number.isFinite(opts.since)
       ? `?since=${encodeURIComponent(String(opts.since))}`
       : "";
-  return apiFetch(`/api/sparks/${id}/llm/showcase/${sessionId}${q}`);
+  return apiFetch(`/api/sparks/${id}/llm/showcase/${sessionId}${q}`, {signal:AbortSignal.timeout(3000)});
+}
+
+/** Best effort during navigation; heartbeat expiry remains the fallback. */
+export function cancelShowcaseOnUnload(id: string, sessionId: string): void {
+  try {
+    void fetch(`/api/sparks/${encodeURIComponent(id)}/llm/showcase/${encodeURIComponent(sessionId)}`, {
+      method:'DELETE', keepalive:true, headers:authHeaders(),
+    }).catch(() => {});
+  } catch { /* Navigation may already have torn down networking. */ }
 }
 
 export function cancelShowcase(

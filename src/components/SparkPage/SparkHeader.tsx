@@ -102,7 +102,7 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
               hermes.status === "idle" && (
                 <span
                   className="max-w-[16rem] shrink-0 truncate rounded bg-danger/15 px-1.5 py-0.5 text-[10px] font-medium text-danger"
-                  title={`Update check failed — it will retry automatically: ${hermes.error}`}
+                  title={`更新检查失败，将自动重试：${hermes.error}`}
                 >
                   检查更新失败
                 </span>

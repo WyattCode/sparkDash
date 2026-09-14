@@ -46,6 +46,35 @@
 .app-frame .node-secondary-metrics { font-size: 13px; }
 .startup-screen { min-height: 100dvh; display: grid; place-items: center; color: var(--color-muted); font-size: 13px; }
 html { scrollbar-gutter: stable; }
+.showcase-page { background: var(--color-base); color: var(--color-text); font-size: 13px; }
+.showcase-page .logo-pill { background: transparent; color: var(--color-text-strong); box-shadow: none; text-decoration: none; }
+.showcase-page .logo-pill-dash { color: inherit; }
+.showcase-page .showcase-model-header { align-items: flex-start; text-align: left; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 8px; box-shadow: none; padding: 10px 14px; gap: 4px; }
+.showcase-page .showcase-model-header__label { color: var(--color-muted); font-size: 12px; letter-spacing: 0; text-transform: none; }
+.showcase-page .showcase-model-header__name { color: var(--color-text-strong); font-family: inherit; font-size: 14px; font-weight: 500; overflow-wrap: anywhere; }
+.showcase-page .showcase-field__label { height: auto; line-height: 1.5; font-size: 12px; letter-spacing: 0; text-transform: none; }
+.showcase-page .showcase-field select, .showcase-page .showcase-field input[type="number"] { height: 32px; font-size: 13px; }
+.showcase-page .showcase-config__actions, .showcase-page .showcase-check { height: 32px; font-size: 12px; }
+.showcase-page .showcase-btn { min-height: 32px; height: auto; padding: 7px 10px; font-size: 12px; }
+.showcase-page .showcase-btn--primary { background: var(--color-accent); color: var(--color-on-accent); border-color: var(--color-accent); box-shadow: none; }
+.showcase-page .showcase-btn--primary:hover:not(:disabled) { background: var(--color-accent-hover); border-color: var(--color-accent-hover); }
+.showcase-page .showcase-term { background: var(--color-surface); color: var(--color-text); border-color: var(--color-border); }
+.showcase-page .showcase-term__header { background: var(--color-surface-elevated); border-color: var(--color-border); }
+.showcase-page .showcase-term__label, .showcase-page .showcase-term__answer { color: var(--color-text); }
+.showcase-page .showcase-term__status, .showcase-page .showcase-term__tps-peak, .showcase-page .showcase-term__reasoning-text, .showcase-page .showcase-term__reasoning-meta, .showcase-page .showcase-term__footer { color: var(--color-muted); }
+.showcase-page .showcase-term__status--streaming, .showcase-page .showcase-term__tps { color: var(--color-chart-primary); }
+.showcase-page .showcase-term__status--completed { color: var(--color-success); }
+.showcase-page .showcase-term__status--error, .showcase-page .showcase-term__error { color: var(--color-danger); }
+.showcase-page .showcase-term__status--cancelled { color: var(--color-warning); }
+.showcase-page .showcase-term__copy, .showcase-page .showcase-term__reasoning-toggle { color: var(--color-muted); background: var(--color-surface-elevated); border-color: var(--color-border); }
+.showcase-page .showcase-term__copy:hover, .showcase-page .showcase-term__reasoning-toggle:hover { color: var(--color-text); background: var(--color-surface-hover); }
+.showcase-page :is(button,a,input,select,summary):focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.showcase-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; flex-shrink: 0; padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-surface); color: var(--color-muted); }
+.showcase-notice > div { display: flex; align-items: center; gap: 12px; }
+.showcase-notice a { color: var(--color-accent); }
+@media (max-width: 639px) {
+  .showcase-page .showcase-field select, .showcase-page .showcase-field input[type="number"] { font-size: 16px; min-height: 36px; }
+}
 .app-frame a.logo-pill { text-decoration: none; cursor: pointer; }
 .app-frame .node-throughput-value { font-size: 22px; line-height: 1.4; position: relative; top: 4px; }
 .app-frame .node-throughput-label { font-size: 14px; line-height: 1.5; position: relative; top: 4px; }

@@ -1,4 +1,5 @@
 import express from "express";
+import { assertBenchmarkAdmission } from './taskAdmission.js';
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { createReadinessInspector, createShutdownLock, shutdownBatch, initiateSparkShutdown as executeShutdown } from "./shutdown.js";
@@ -1009,6 +1010,7 @@ app.post("/api/sparks/:id/llm/bench", async (req, res) => {
 
   try {
     const benchDebug = Boolean(getSettings().benchDebugTraces);
+    assertBenchmarkAdmission(spark.id, 'decode', {decode:decodeBenchManager, prefill:prefillBenchManager, showcase:showcaseManager, maxActive:MAX_ACTIVE_BENCH_JOBS});
     const job = decodeBenchManager.start({
       sparkId: spark.id,
       lanIp: llmProbeHost(spark),
@@ -1185,6 +1187,7 @@ app.post("/api/sparks/:id/llm/prefill-bench", async (req, res) => {
   }
 
   try {
+    assertBenchmarkAdmission(spark.id, 'prefill', {decode:decodeBenchManager, prefill:prefillBenchManager, showcase:showcaseManager, maxActive:MAX_ACTIVE_BENCH_JOBS});
     const job = prefillBenchManager.start({
       sparkId: spark.id,
       lanIp: llmProbeHost(spark),

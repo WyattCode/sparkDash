@@ -204,7 +204,7 @@ export function PrefillBenchDialog({
                   return;
                 }
                 setError(
-                  err.message === "Benchmark not found"
+                  ["Benchmark not found", "找不到基准测试记录"].includes(err.message)
                     ? "基准测试中断，运行期间服务已重启"
                     : err.message
                 );
@@ -212,7 +212,7 @@ export function PrefillBenchDialog({
               })
               .catch(() => {
                 setError(
-                  err.message === "Benchmark not found"
+                  ["Benchmark not found", "找不到基准测试记录"].includes(err.message)
                     ? "基准测试中断，运行期间服务已重启"
                     : err.message
                 );
@@ -386,7 +386,7 @@ export function PrefillBenchDialog({
   const showResults = job && job.status !== "running";
   const ctxHint =
     contextLength != null && contextLength > 0
-      ? `Model context ${formatContextSize(contextLength)} — larger sizes are disabled.`
+      ? `模型上下文为 ${formatContextSize(contextLength)}，超出上限的长度已禁用。`
       : "Unique-prefix prompts; TTFT is time to first token. 128k–300k can take tens of minutes.";
 
   const dialog = (
@@ -452,7 +452,7 @@ export function PrefillBenchDialog({
                         title={
                           fits
                             ? `${n.toLocaleString()} tokens`
-                            : `Exceeds model context (${contextLength?.toLocaleString()} tokens)`
+                            : `超出模型上下文上限（${contextLength?.toLocaleString()} Token）`
                         }
                         onClick={() => toggleSize(n)}
                         className={`bench-conc-btn${on ? " is-on" : ""}`}

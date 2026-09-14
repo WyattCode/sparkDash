@@ -529,7 +529,7 @@ export function LlmPanel({
           {onRemovePort && (
             <button
               type="button"
-              title={`Remove port ${llmPort}`}
+              title={`移除端口 ${llmPort}`}
               onClick={() => onRemovePort(llmPort)}
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-danger transition-colors hover:bg-danger/10"
             >

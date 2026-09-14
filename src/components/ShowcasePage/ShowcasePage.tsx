@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
+  ApiError,
+  cancelShowcaseOnUnload,
   cancelShowcase,
   clearShowcaseHistory,
   fetchSparkMetrics,
@@ -16,6 +18,8 @@ import type {
 import { isLlmMonitoringEnabled } from "../../api/sparkRole";
 import { BoltIcon } from "../ui/icons";
 import { TerminalCard } from "./TerminalCard";
+import { ThemeSwitch } from '../ThemeSwitch';
+import { checkShowcaseAvailability, useShowcaseAvailability } from '../../hooks/useShowcaseAvailability';
 import {
   PROMPT_TYPES,
   pickShowcasePrompts,
@@ -213,10 +217,13 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
 
   const revRef = useRef<number | null>(null);
   const sessionIdRef = useRef<string | null>(null);
+  const startingRef = useRef(false);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollEpoch = useRef(0);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const running = sessionStatus === "running";
   const controlsLocked = running || starting;
+  const availability = useShowcaseAvailability(sparkId, Boolean(spark) && isLlmMonitoringEnabled(spark!) && !spark!.workerNode && !running);
 
   const llmPorts = useMemo(() => {
     if (!spark) return [8888];
@@ -229,7 +236,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
     Boolean(spark) &&
     isLlmMonitoringEnabled(spark!) &&
     !spark!.workerNode &&
-    !controlsLocked;
+    !controlsLocked && !availability.message;
 
   const displayStreams = useMemo(() => {
     // Keep finished-run results only while the stream count still matches selection.
@@ -384,6 +391,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
   );
 
   const stopPolling = useCallback(() => {
+    ++pollEpoch.current;
     if (pollTimer.current != null) {
       clearTimeout(pollTimer.current);
       pollTimer.current = null;
@@ -500,38 +508,49 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
 
   const pollOnce = useCallback(
     async (sid: string) => {
+      const epoch = pollEpoch.current;
       const since = revRef.current;
       const data = await getShowcase(
         sparkId,
         sid,
         since != null ? { since } : undefined
       );
-      applySession(data, since == null);
+      if (sessionIdRef.current === sid && pollEpoch.current === epoch) applySession(data, since == null);
       return data;
     },
     [sparkId, applySession]
   );
 
   const schedulePoll = useCallback(
-    (sid: string) => {
+    (sid: string, delay = POLL_MS) => {
       stopPolling();
+      const epoch = pollEpoch.current;
       pollTimer.current = setTimeout(() => {
         void (async () => {
-          if (sessionIdRef.current !== sid) return;
+          if (sessionIdRef.current !== sid || pollEpoch.current !== epoch) return;
           try {
             const data = await pollOnce(sid);
-            if (sessionIdRef.current !== sid) return;
+            if (sessionIdRef.current !== sid || pollEpoch.current !== epoch) return;
+            setRunError(null);
             if (data.status === "running") {
               schedulePoll(sid);
             } else {
               stopPolling();
             }
           } catch (err) {
-            setRunError(err instanceof Error ? err.message : String(err));
-            stopPolling();
+            if (sessionIdRef.current !== sid || pollEpoch.current !== epoch) return;
+            if (err instanceof ApiError && err.status === 404) {
+              setRunError('演示会话已不存在，保留已收到的内容；请检查历史记录。');
+              setSessionStatus('unavailable');
+              sessionIdRef.current = null;
+              stopPolling();
+            } else {
+              setRunError(`${err instanceof Error ? err.message : String(err)} 正在自动重连，暂不重复启动。`);
+              schedulePoll(sid, 1000);
+            }
           }
         })();
-      }, POLL_MS);
+      }, delay);
     },
     [pollOnce, stopPolling]
   );
@@ -545,20 +564,18 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
       applySession(data, false);
     } catch (err) {
       setRunError(err instanceof Error ? err.message : String(err));
+      if (sessionIdRef.current === sid) schedulePoll(sid, 1000);
     }
-  }, [sparkId, applySession, stopPolling]);
+  }, [sparkId, applySession, stopPolling, schedulePoll]);
 
   const handleRun = useCallback(async () => {
-    if (!canRun) return;
+    if (!canRun || startingRef.current) return;
+    startingRef.current = true;
     setRunError(null);
     setStarting(true);
-    setViewingHistory(false);
-    revRef.current = null;
-    setStreams([]);
-    setServerTps(null);
-    setServerTpsMax(null);
-    setAggregatePeakTps(0);
     try {
+      const blocking = await checkShowcaseAvailability(sparkId);
+      if (blocking) throw new Error(blocking);
       const trimmed = prompts.map((p) => p.trim()).filter(Boolean);
       if (trimmed.length < MIN_TERMINALS || trimmed.length > MAX_TERMINALS) {
         throw new Error(`请填写 ${MIN_TERMINALS} 到 ${MAX_TERMINALS} 条非空提示词`);
@@ -572,19 +589,22 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
         promptType,
         prompts: trimmed,
       });
+      setViewingHistory(false);
+      revRef.current = null;
+      setStreams([]);
+      setServerTps(null);
+      setServerTpsMax(null);
+      setAggregatePeakTps(0);
       sessionIdRef.current = started.sessionId;
       setSessionId(started.sessionId);
       setSessionStatus("running");
       setConfigOpen(false);
       setHistoryOpen(false);
-      const data = await pollOnce(started.sessionId);
-      if (data.status === "running") schedulePoll(started.sessionId);
+      schedulePoll(started.sessionId);
     } catch (err) {
       setRunError(err instanceof Error ? err.message : String(err));
-      setSessionStatus(null);
-      sessionIdRef.current = null;
-      setSessionId(null);
     } finally {
+      startingRef.current = false;
       setStarting(false);
     }
   }, [
@@ -701,15 +721,12 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
   }, [running, starting, sparkId, viewingHistory]);
 
   useEffect(() => {
+    let sent = false;
     const cancelBeacon = () => {
       const sid = sessionIdRef.current;
-      if (!sid || sessionStatus !== "running") return;
-      const url = `/api/sparks/${encodeURIComponent(sparkId)}/llm/showcase/${encodeURIComponent(sid)}`;
-      try {
-        void fetch(url, { method: "DELETE", keepalive: true });
-      } catch {
-        /* ignore */
-      }
+      if (!sid || sessionStatus !== "running" || sent) return;
+      sent = true;
+      cancelShowcaseOnUnload(sparkId, sid);
     };
     window.addEventListener("pagehide", cancelBeacon);
     window.addEventListener("beforeunload", cancelBeacon);
@@ -773,7 +790,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
             <a href="/" className="logo-pill showcase-brand" title="sparkDash 首页">
               <BoltIcon className="showcase-brand__bolt" />
               <span>
-                spark<span className="logo-pill-dash">控制台</span>
+                spark<span className="logo-pill-dash" translate="no">Dash</span>
               </span>
             </a>
             <div className="showcase-config__subtitle">
@@ -825,7 +842,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
             <a href="/" className="logo-pill showcase-brand" title="sparkDash 首页">
               <BoltIcon className="showcase-brand__bolt" />
               <span>
-                spark<span className="logo-pill-dash">控制台</span>
+                spark<span className="logo-pill-dash" translate="no">Dash</span>
               </span>
             </a>
             <div className="showcase-config__subtitle">
@@ -836,6 +853,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
             </div>
           </div>
           <div className="showcase-config__controls">
+            <ThemeSwitch />
             <fieldset className="showcase-config__lockgroup" disabled={controlsLocked}>
               <label className="showcase-field">
                 <span className="showcase-field__label">端口</span>
@@ -1120,6 +1138,8 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
       </div>
       )}
 
+      {!running && availability.message && !monitoringOff && <div className="showcase-notice" role="status"><span>{availability.message}</span><div><button className="showcase-btn showcase-btn--ghost" disabled={availability.checking} onClick={()=>void availability.refresh()}>{availability.checking?'检查中…':'刷新状态'}</button><a href={`/spark/${encodeURIComponent(sparkId)}`}>查看节点任务</a></div></div>}
+      {runError && !barVisible && <p className="showcase-config__error" role="alert">{runError}</p>}
       {modelId ? (
         <header className="showcase-model-header" title={modelId}>
           <span className="showcase-model-header__label">模型</span>
@@ -1163,7 +1183,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
             ·
           </span>
           <div className="showcase-metrics__item">
-            <span className="showcase-metrics__label">Tokens</span>
+            <span className="showcase-metrics__label">生成 Token 数</span>
             <span className="showcase-metrics__value font-tabular">
               {totalTokens > 0 ? formatToks(totalTokens) : "—"}
             </span>
@@ -1209,10 +1229,10 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
           ["--showcase-rows" as string]: String(gridRows),
         }}
       >
-        {displayStreams.map((s) => (
+        {displayStreams.map((s, index) => (
           <TerminalCard
             key={s.streamId}
-            label={s.label}
+            label={`终端 ${index + 1}`}
             status={s.status}
             liveTokPerSec={s.liveTokPerSec}
             peakTokPerSec={s.peakTokPerSec}

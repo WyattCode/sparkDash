@@ -429,7 +429,7 @@ export function HermesUpdateDialog() {
                     target="_blank"
                     rel="noreferrer"
                     className="ml-auto inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
-                    title={`These commits are ahead of release v${upd.release.semver}`}
+                    title={`这些提交晚于发行版 v${upd.release.semver}`}
                   >
                     查看版本说明（v{upd.release.semver})
                     <ExternalLinkIcon className="h-3 w-3" />

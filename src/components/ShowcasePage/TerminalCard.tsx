@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { translateApiError } from '../../i18n/apiErrors';
 
 export interface TerminalCardProps {
   label: string;
@@ -133,7 +134,7 @@ export function TerminalCard({
             <pre className="showcase-term__answer">…</pre>
           )
         )}
-        {error ? <pre className="showcase-term__error">{`[错误] ${error}`}</pre> : null}
+        {error ? <pre className="showcase-term__error">{`[错误] ${translateApiError(error)}`}</pre> : null}
       </div>
       <footer className="showcase-term__footer">
         <div className="showcase-gauge" aria-hidden="true">

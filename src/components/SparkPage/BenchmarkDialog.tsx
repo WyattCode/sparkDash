@@ -233,7 +233,7 @@ export function BenchmarkDialog({
                   return;
                 }
                 setError(
-                  err.message === "Benchmark not found"
+                  ["Benchmark not found", "找不到基准测试记录"].includes(err.message)
                     ? "基准测试中断，运行期间服务已重启"
                     : err.message
                 );
@@ -241,7 +241,7 @@ export function BenchmarkDialog({
               })
               .catch(() => {
                 setError(
-                  err.message === "Benchmark not found"
+                  ["Benchmark not found", "找不到基准测试记录"].includes(err.message)
                     ? "基准测试中断，运行期间服务已重启"
                     : err.message
                 );

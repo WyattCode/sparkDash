@@ -43,8 +43,8 @@ export function ThemeSwitch() {
       type="button"
       onClick={toggle}
       className="icon-circle"
-      title={`Theme: ${theme}`}
-      aria-label={`Switch theme (currently ${theme})`}
+      title={`主题：${({white:'纯白',light:'浅色',dark:'深色',oled:'纯黑'})[theme]}`}
+      aria-label={`切换主题（当前：${({white:'纯白',light:'浅色',dark:'深色',oled:'纯黑'})[theme]}）`}
     >
       <Icon className="h-3.5 w-3.5" />
     </button>

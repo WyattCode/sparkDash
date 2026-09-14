@@ -9,6 +9,7 @@ import { FleetAlertStrip } from "./FleetAlertStrip";
 import { ActivityIcon, PowerOffIcon, PowerOnIcon, RotateIcon } from "../ui/icons";
 import { OperationsPanel } from './OperationsPanel';
 import { finite, gpuReady, nodeIssues } from './operationsModel';
+import { temperatureColor } from './temperatureColor';
 
 interface OverviewPageProps {
   telemetryStale?: boolean;
@@ -107,8 +108,7 @@ function SparkCard({
   const vramAvail = gpu?.vram?.available ?? um?.available ?? 0;
 
   // Normal data uses node identity; threshold states override it.
-  const tempBarColor =
-    tempRaw > 85 ? "bg-danger" : tempRaw > 65 ? "bg-warning" : "bg-data";
+  const tempBarColor = temperatureColor(tempRaw, temperatureUnit);
   const usageBarColor = gpu?.throttle?.thermal ? "bg-danger" : "bg-data";
   // VRAM allocation: accent normal → warning/danger as it fills
   const vramBarColor = vramPct > 85 ? "bg-danger" : vramPct > 60 ? "bg-warning" : "bg-data";
@@ -242,6 +242,7 @@ function SparkCard({
                   : "温度"
               }
               value={displayTemp}
+              autoBand={false}
               max={temperatureUnit === "fahrenheit" ? 212 : 100}
               color={tempBarColor}
               caption={tempLabel}
@@ -401,12 +402,14 @@ function ComparisonMetric({
   value,
   max,
   format,
+  color,
 }: {
   title: string;
   sparks: SparkSnapshot[];
   value: (spark: SparkSnapshot) => number | null;
   max: number;
   format: (value: number) => string;
+  color?: (value: number, spark: SparkSnapshot) => string;
 }) {
   return (
     <section className="comparison-metric">
@@ -414,6 +417,7 @@ function ComparisonMetric({
       <div className="comparison-metric__rows">
         {sparks.map((spark) => {
           const current = gpuReady(spark) ? value(spark) : null;
+          const tone = current != null ? color?.(current, spark) : undefined;
           const width = Math.max(0, Math.min(100, max > 0 && current != null ? (current / max) * 100 : 0));
           return (
             <div className="comparison-metric__row" key={spark.id}>
@@ -424,7 +428,7 @@ function ComparisonMetric({
               <div className="comparison-metric__track">
                 <span
                   className={spark.role === 'worker' || spark.workerNode ? "is-worker" : "is-head"}
-                  style={{ width: `${width}%` }}
+                  style={{ width: `${width}%`, ...(tone ? { background: `var(--color-${tone === 'bg-danger' ? 'danger' : tone === 'bg-warning' ? 'warning' : tone === 'bg-neutral' ? 'text' : spark.role === 'worker' || spark.workerNode ? 'chart-secondary' : 'chart-primary'})` } : {}) }}
                 />
               </div>
             </div>
@@ -509,9 +513,9 @@ export function OverviewPage({
       const started = res.results.filter((r) => r.started);
       const skipped = res.results.filter((r) => r.skipped).length;
       const failed = res.results.filter((r) => !r.ok && !r.skipped).length;
-      const parts = [`${started.length} update${started.length === 1 ? "" : "s"} started`];
-      if (skipped) parts.push(`${skipped} skipped`);
-      if (failed) parts.push(`${failed} failed`);
+      const parts = [`${started.length} 个更新已启动`];
+      if (skipped) parts.push(`${skipped} 个已跳过`);
+      if (failed) parts.push(`${failed} 个失败`);
       setBatchMsg({
         text: parts.join(", "),
         tone: failed === 0 ? "ok" : "err",
@@ -525,7 +529,7 @@ export function OverviewPage({
       });
     } catch (err: unknown) {
       setBatchMsg({
-        text: err instanceof Error ? err.message : "Batch hermes update failed",
+        text: err instanceof Error ? err.message : "批量更新 Hermes 失败",
         tone: "err",
       });
     } finally {
@@ -571,12 +575,12 @@ export function OverviewPage({
       const ok = res.results.filter((r) => r.ok).length;
       const fail = res.results.filter((r) => !r.ok).length;
       setBatchMsg({
-        text: fail === 0 ? `${ok} wake packet(s) sent` : `${ok} sent, ${fail} failed`,
+        text: fail === 0 ? `已发送 ${ok} 个唤醒包` : `${ok} 个已发送，${fail} 个失败`,
         tone: fail === 0 ? "ok" : "err",
       });
     } catch (err: unknown) {
       setBatchMsg({
-        text: err instanceof Error ? err.message : "Batch wake failed",
+        text: err instanceof Error ? err.message : "批量唤醒失败",
         tone: "err",
       });
     } finally {
@@ -727,6 +731,23 @@ export function OverviewPage({
           <span>离线节点 <strong className="font-tabular">{visibleSparks.length - onlineCount}</strong></span>
         </div>
       </section>
+      {visibleSparks.length > 0 ? (
+        <section className="comparison-band" aria-label="实时指标数据">
+          <div className="comparison-band__header">
+            <div>
+              <h2>实时指标数据</h2>
+              <p>两个节点的当前负载与资源状态</p>
+            </div>
+            <span className="text-[11px] text-muted">实时刷新</span>
+          </div>
+          <div className="comparison-band__grid">
+            <ComparisonMetric title="GPU 使用率" sparks={visibleSparks} value={(s) => telemetryStale ? null : finite(s.metrics.gpu?.usage)} max={100} format={(v) => `${Math.round(v)}%`} />
+            <ComparisonMetric title="GPU 温度" sparks={visibleSparks} color={(v) => temperatureColor(v, temperatureUnit)} value={(s) => telemetryStale || !s.metrics.gpu?.temperature ? null : s.metrics.gpu.temperature} max={100} format={(v) => temperatureUnit === 'fahrenheit' ? `${celsiusToFahrenheit(v)}°F` : `${Math.round(v)}°C`} />
+            <ComparisonMetric title="GPU 内存分配" sparks={visibleSparks} value={(s) => telemetryStale ? null : finite(s.metrics.gpu?.vram?.used)} max={Math.max(1,...visibleSparks.map((s) => s.metrics.gpu?.vram?.total ?? 0))} format={(v) => formatMb(v)} />
+            <ComparisonMetric title="GPU 功耗（非整机）" sparks={visibleSparks} color={(_, s) => temperatureColor(s.metrics.gpu?.temperature ?? 0, temperatureUnit)} value={(s) => telemetryStale ? null : finite(s.metrics.gpu?.power.draw)} max={Math.max(1,...visibleSparks.map(s=>s.metrics.gpu?.power.limit??0))} format={(v) => `${v.toFixed(1)} W`} />
+          </div>
+        </section>
+      ) : null}
       <OperationsPanel sparks={sparks} stale={telemetryStale} onSelect={onSelectSpark}/>
       {showOverviewSearch ? (
       <div className="flex flex-wrap gap-2" role="search" aria-label="筛选集群节点">
@@ -779,23 +800,6 @@ export function OverviewPage({
           />
         ))}
       </div>
-      {visibleSparks.length > 0 ? (
-        <section className="comparison-band" aria-label="实时指标对比">
-          <div className="comparison-band__header">
-            <div>
-              <h2>实时指标对比</h2>
-              <p>两个节点的当前负载与资源状态</p>
-            </div>
-            <span className="text-[11px] text-muted">实时刷新</span>
-          </div>
-          <div className="comparison-band__grid">
-            <ComparisonMetric title="GPU 使用率" sparks={visibleSparks} value={(s) => telemetryStale ? null : finite(s.metrics.gpu?.usage)} max={100} format={(v) => `${Math.round(v)}%`} />
-            <ComparisonMetric title="GPU 温度" sparks={visibleSparks} value={(s) => telemetryStale || !s.metrics.gpu?.temperature ? null : s.metrics.gpu.temperature} max={100} format={(v) => temperatureUnit === 'fahrenheit' ? `${celsiusToFahrenheit(v)}°F` : `${Math.round(v)}°C`} />
-            <ComparisonMetric title="GPU 内存分配" sparks={visibleSparks} value={(s) => telemetryStale ? null : finite(s.metrics.gpu?.vram?.used)} max={Math.max(1,...visibleSparks.map((s) => s.metrics.gpu?.vram?.total ?? 0))} format={(v) => formatMb(v)} />
-            <ComparisonMetric title="GPU 功耗（非整机）" sparks={visibleSparks} value={(s) => telemetryStale ? null : finite(s.metrics.gpu?.power.draw)} max={Math.max(1,...visibleSparks.map(s=>s.metrics.gpu?.power.limit??0))} format={(v) => `${v.toFixed(1)} W`} />
-          </div>
-        </section>
-      ) : null}
     </div>
   );
 }

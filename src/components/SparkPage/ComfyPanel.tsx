@@ -243,7 +243,7 @@ export function ComfyPanel({
 
   const handleCancel = useCallback(
     async (promptId: string) => {
-      if (!confirm("Cancel this ComfyUI job?")) return;
+      if (!confirm("确认取消此 ComfyUI 任务？")) return;
       setActionError(null);
       setCancellingId(promptId);
       try {
