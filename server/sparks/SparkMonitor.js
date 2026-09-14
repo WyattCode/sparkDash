@@ -452,6 +452,7 @@ export class SparkMonitor {
       name: this.spark.name,
       kind: this.spark.kind || "spark",
       online: this.online,
+      telemetry: { updatedAt: { ...this._lastUpdate }, successful: { ...this._metricCollectionSuccessful } },
       uptime: this._uptimeSeconds,
       lanIp: this.spark.lanIp || "",
       isLocal: Boolean(this.spark.isLocal),

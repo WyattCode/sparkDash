@@ -271,7 +271,7 @@ function PendingCommitsList({ upd }: { upd: HermesUpdatesResponse }) {
       </ul>
       {pending && pending.count > commits.length && (
         <p className="mt-2 text-[10px] text-muted">
-          …and {pending.count - commits.length} more (showing first {commits.length}).
+          …以及 {pending.count - commits.length} 项更多（当前显示前 {commits.length}).
         </p>
       )}
     </div>
@@ -361,7 +361,7 @@ export function HermesUpdateDialog() {
         <div className="modal-sheet__header" id="hermes-update-dialog-title">
           <div className="flex items-center gap-2">
             <RotateIcon className="h-4 w-4 shrink-0 text-accent" />
-            <span>Update Hermes Agent</span>
+            <span>更新 Hermes 代理</span>
           </div>
           <p className="mt-1 text-[11px] font-normal text-muted">
             {target?.sparkName}
@@ -373,14 +373,14 @@ export function HermesUpdateDialog() {
           {loading && (
             <div className="flex items-center gap-2 text-xs text-muted">
               <RotateIcon className="h-3.5 w-3.5 animate-spin text-accent" />
-              Loading release notes…
+              正在加载版本说明…
             </div>
           )}
 
           {error && !loading && (
             <div className="rounded-md border border-danger/35 bg-danger/10 px-3 py-2.5">
               <p className="text-[11px] font-medium text-danger">
-                Couldn't load the changelog. You can still update.
+                无法加载更新日志，仍可手动更新。
               </p>
               <p className="mt-1 break-words text-[11px] text-muted">{error}</p>
               <div className="mt-2 flex items-center gap-3">
@@ -399,7 +399,7 @@ export function HermesUpdateDialog() {
                   }}
                   className="rounded-md border border-border bg-surface-elevated px-2.5 py-1 text-[11px] text-muted hover:bg-surface-hover hover:text-text"
                 >
-                  Retry
+                  重试
                 </button>
                 <a
                   href="https://github.com/NousResearch/hermes-agent/releases"
@@ -407,7 +407,7 @@ export function HermesUpdateDialog() {
                   rel="noreferrer"
                   className="inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
                 >
-                  Open releases page
+                  打开版本发布页面
                   <ExternalLinkIcon className="h-3 w-3" />
                 </a>
               </div>
@@ -418,10 +418,10 @@ export function HermesUpdateDialog() {
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded bg-accent/15 px-1.5 py-0.5 font-tabular text-[11px] font-medium text-accent">
-                  {upd.pending.count} commit{upd.pending.count === 1 ? "" : "s"} behind main
+                  {upd.pending.count} 提交{upd.pending.count === 1 ? "" : "s"} 落后于 main
                 </span>
                 {upd.installedVersion && (
-                  <span className="text-[11px] text-muted">(installed v{upd.installedVersion})</span>
+                  <span className="text-[11px] text-muted">（已安装 v{upd.installedVersion})</span>
                 )}
                 {upd.release && upd.release.semver && (
                   <a
@@ -431,15 +431,13 @@ export function HermesUpdateDialog() {
                     className="ml-auto inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
                     title={`These commits are ahead of release v${upd.release.semver}`}
                   >
-                    View release notes (v{upd.release.semver})
+                    查看版本说明（v{upd.release.semver})
                     <ExternalLinkIcon className="h-3 w-3" />
                   </a>
                 )}
               </div>
               <p className="text-[11px] leading-relaxed text-muted">
-                No tagged release covers these commits — updating pulls only these changes on
-                top of v{upd.installedVersion ?? "your install"}; the full release changelog
-                doesn't apply here.
+                这些提交尚无对应版本标签；此次仅在以下版本基础上更新这些改动：v{upd.installedVersion ?? "当前安装"}；完整版本更新日志不适用于此次更新。
               </p>
               <PendingCommitsList upd={upd} />
             </div>
@@ -447,8 +445,8 @@ export function HermesUpdateDialog() {
             <div className="space-y-3">
               {upd.pending?.commits?.length ? (
                 <p className="text-[11px] text-muted">
-                  This update also includes {upd.pending.count} commit
-                  {upd.pending.count === 1 ? "" : "s"} on top of the release below.
+                  此次更新还包括 {upd.pending.count} 提交
+                  {upd.pending.count === 1 ? "" : "s"} 基于下方版本的额外改动。
                 </p>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
@@ -457,7 +455,7 @@ export function HermesUpdateDialog() {
                 </span>
                 {target?.currentVersion && (
                   <span className="text-[11px] text-muted">
-                    (installed v{target.currentVersion})
+                    （已安装 v{target.currentVersion})
                   </span>
                 )}
                 {upd.release.publishedAt && (
@@ -470,9 +468,9 @@ export function HermesUpdateDialog() {
                   target="_blank"
                   rel="noreferrer"
                   className="ml-auto inline-flex items-center gap-1 text-[11px] text-accent hover:underline"
-                  title="View this release on GitHub"
+                  title="在 GitHub 查看此版本"
                 >
-                  View on GitHub
+                  在 GitHub 查看
                   <ExternalLinkIcon className="h-3 w-3" />
                 </a>
               </div>
@@ -480,17 +478,17 @@ export function HermesUpdateDialog() {
                 {upd.release.body ? (
                   <ChangelogBody body={upd.release.body} />
                 ) : (
-                  <p className="text-xs text-muted">No release notes provided for this version.</p>
+                  <p className="text-xs text-muted">此版本没有发行说明。</p>
                 )}
               </div>
             </div>
           ) : upd && !loading ? (
             <div className="rounded-md border border-danger/35 bg-danger/10 px-3 py-2.5">
               <p className="text-[11px] font-medium text-danger">
-                Couldn't determine what this update contains. You can still update.
+                无法确认此次更新的内容，仍可手动更新。
               </p>
               <p className="mt-1 break-words text-[11px] text-muted">
-                {upd.releaseError ?? "No release or commit information available."}
+                {upd.releaseError ?? "没有可用的发行版或提交信息。"}
               </p>
             </div>
           ) : null}
@@ -498,8 +496,8 @@ export function HermesUpdateDialog() {
 
         <div className="modal-sheet__footer">
           <p className="text-[10px] text-muted">
-            Runs <code className="rounded bg-surface-elevated px-1 font-mono">hermes update</code> on{" "}
-            {target?.sparkName} via SSH.
+            运行记录 <code className="rounded bg-surface-elevated px-1 font-mono">hermes update</code> on{" "}
+            {target?.sparkName} 通过 SSH。
           </p>
           <div className="modal-sheet__footer-actions">
             <button
@@ -508,7 +506,7 @@ export function HermesUpdateDialog() {
               disabled={updating}
               className="rounded-md border border-border bg-surface-elevated px-3 py-1.5 text-xs text-muted transition-colors hover:bg-surface-hover hover:text-text disabled:opacity-50"
             >
-              Cancel
+              取消
             </button>
             <button
               type="button"
@@ -519,10 +517,10 @@ export function HermesUpdateDialog() {
               {updating ? (
                 <>
                   <RotateIcon className="h-3 w-3 animate-spin" />
-                  Updating…
+                  正在更新…
                 </>
               ) : (
-                "Update now"
+                "立即更新"
               )}
             </button>
           </div>

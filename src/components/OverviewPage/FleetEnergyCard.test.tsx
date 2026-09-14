@@ -24,7 +24,7 @@ function energy(overrides: Partial<FleetEnergy> = {}): FleetEnergy {
     energy31dKwh: 40,
     whPerOutputToken24h: 0.0123,
     outputTokens24h: 100,
-    coverage24hMs: 86_400_000 * 2,
+    coverage24hMs: 86_400_000,
     coverage31dMs: 0,
     nodeCoverage24hMs: {},
     nodeCoverage31dMs: {},
@@ -38,7 +38,8 @@ describe("FleetEnergyCard states", () => {
     fetchEnergy.mockResolvedValue(energy());
     const { container } = render(<FleetEnergyCard nodeCount={2} />);
     await flush();
-    expect(container.textContent).toContain("Estimated, not wall-metered");
+    expect(container.textContent).toContain("估算值，非电表实测");
+    expect(container.textContent).toContain("100.0%");
     expect(container.textContent).toContain("240 W");
     expect(container.textContent).toContain("0.0123 Wh/token");
     const bars = [...container.querySelectorAll("[aria-label] span")];
@@ -49,21 +50,21 @@ describe("FleetEnergyCard states", () => {
     fetchEnergy.mockResolvedValue(energy({ energy24hKwh: null, currentWatts30s: null }));
     const warming = render(<FleetEnergyCard nodeCount={2} />);
     await flush();
-    expect(warming.container.textContent).toContain("Warming up");
+    expect(warming.container.textContent).toContain("正在积累样本");
 
     fetchEnergy.mockResolvedValue(energy({ freshNodeCount: 1 }));
     const partial = render(<FleetEnergyCard nodeCount={2} />);
     await flush();
-    expect(partial.container.textContent).toContain("Partial coverage: 1/2");
+    expect(partial.container.textContent).toContain("部分覆盖： 1/2");
 
     fetchEnergy.mockResolvedValue(energy({ membershipChanged: true, restartRequired: true }));
     const membership = render(<FleetEnergyCard nodeCount={2} />);
     await flush();
-    expect(membership.container.textContent).toContain("Restart sparkDash");
+    expect(membership.container.textContent).toContain("重启 sparkDash");
 
     fetchEnergy.mockRejectedValue(new Error("disk write failed"));
     const failed = render(<FleetEnergyCard nodeCount={2} />);
     await flush();
-    expect(failed.container.textContent).toContain("Energy telemetry unavailable: disk write failed");
+    expect(failed.container.textContent).toContain("能耗遥测不可用： disk write failed");
   });
 });

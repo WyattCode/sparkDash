@@ -1,9 +1,19 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="dark" data-density="compact">
+<html lang="zh-CN" data-theme="dark" data-density="compact">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>sparkDash — Multi-DGX Spark Monitoring Dashboard</title>
+  <title>sparkDash 双机监控</title>
+  <link rel="preload" href="/src/assets/fonts/InterVariable.woff2" as="font" type="font/woff2" crossorigin />
+  <script>
+    // Apply presentation preferences before CSS/React can paint a different theme.
+    try {
+      const theme = localStorage.getItem('sparkdash-theme');
+      if (['dark', 'oled', 'white', 'light'].includes(theme)) document.documentElement.dataset.theme = theme;
+      const density = localStorage.getItem('sparkdash-density');
+      if (['compact', 'comfortable'].includes(density)) document.documentElement.dataset.density = density;
+    } catch (_) { /* Storage can be disabled; retain safe HTML defaults. */ }
+  </script>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23e8a830' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><path d='M13 2L3 14h9l-1 8 10-12h-9l1-8z'/></svg>" />
 </head>
 <body>

@@ -58,14 +58,14 @@ export function TerminalCard({
     <article className="showcase-term">
       <header className="showcase-term__header">
         <span className="showcase-term__label" title={label}>
-          {label || "Terminal"}
+          {label || "终端"}
         </span>
-        <span className={`showcase-term__status ${statusClass(status)}`}>{status}</span>
+        <span className={`showcase-term__status ${statusClass(status)}`}>{({pending:'等待中',streaming:'生成中',completed:'已完成',error:'失败',cancelled:'已取消'} as Record<string,string>)[status]||'未知状态'}</span>
         <span
           className="showcase-term__tps font-tabular"
           title={
             peakTokPerSec > 0 || liveTokPerSec > 0
-              ? `Live ${liveTokPerSec.toFixed(1)} tok/s · peak ${Math.max(peakTokPerSec, liveTokPerSec).toFixed(1)} tok/s`
+              ? `当前 ${liveTokPerSec.toFixed(1)} tok/s · 峰值 ${Math.max(peakTokPerSec, liveTokPerSec).toFixed(1)} tok/s`
               : undefined
           }
         >
@@ -75,7 +75,7 @@ export function TerminalCard({
               {peakTokPerSec > 0 && (
                 <span className="showcase-term__tps-peak">
                   {" "}
-                  peak {Math.max(peakTokPerSec, liveTokPerSec).toFixed(0)}
+                  峰值 {Math.max(peakTokPerSec, liveTokPerSec).toFixed(0)}
                 </span>
               )}
             </>
@@ -88,9 +88,9 @@ export function TerminalCard({
             type="button"
             className="showcase-term__copy"
             onClick={onCopy}
-            title="Copy this terminal"
+            title="复制此终端"
           >
-            {copied ? "Copied" : "Copy"}
+            {copied ? "已复制！" : "复制"}
           </button>
         )}
       </header>
@@ -105,8 +105,9 @@ export function TerminalCard({
         }}
       >
         {empty && status === "pending" && (
-          <pre className="showcase-term__answer">Waiting…</pre>
+          <pre className="showcase-term__answer">等待中…</pre>
         )}
+        {empty&&status!=='pending'&&!error&&<p role="status" className="showcase-term__answer">{status==='streaming'?'正在等待首个 Token…':status==='cancelled'?'已取消，未收到输出。':status==='completed'?'本次运行已结束，未返回文本内容。':'暂无输出，请查看运行状态。'}</p>}
         {hasReasoning && (
           <div className="showcase-term__reasoning">
             <button
@@ -115,9 +116,9 @@ export function TerminalCard({
               aria-expanded={reasoningOpen}
               onClick={() => setReasoningOpen((o) => !o)}
             >
-              {reasoningOpen ? "▾" : "▸"} Thinking
+              {reasoningOpen ? "▾" : "▸"} 思考
               <span className="showcase-term__reasoning-meta">
-                {reasoning.length.toLocaleString()} chars
+                {reasoning.length.toLocaleString()} 字符
               </span>
             </button>
             {reasoningOpen && (
@@ -132,7 +133,7 @@ export function TerminalCard({
             <pre className="showcase-term__answer">…</pre>
           )
         )}
-        {error ? <pre className="showcase-term__error">{`[error] ${error}`}</pre> : null}
+        {error ? <pre className="showcase-term__error">{`[错误] ${error}`}</pre> : null}
       </div>
       <footer className="showcase-term__footer">
         <div className="showcase-gauge" aria-hidden="true">

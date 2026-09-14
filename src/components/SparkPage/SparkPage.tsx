@@ -5,6 +5,7 @@ import { updateSpark, refreshSparkMetric, addLlmPort, removeLlmPort } from "../.
 import { SparkHeader } from "./SparkHeader";
 import { SparkActions } from "./SparkActions";
 import { GpuPanel } from "./GpuPanel";
+import { gpuReady } from "../OverviewPage/operationsModel";
 import { RamPanel } from "./RamPanel";
 import { StoragePanel } from "./StoragePanel";
 import { NetworkPanel } from "./NetworkPanel";
@@ -60,9 +61,9 @@ function SectionHeading({
       type="button"
       onClick={onToggle}
       aria-expanded={open}
-      className="md:col-span-2 flex w-full items-center gap-2 text-left font-normal leading-tight tracking-tight text-text-strong transition-colors hover:text-accent"
+      className="machine-section-heading md:col-span-2 flex w-full items-center gap-2 text-left font-semibold leading-tight text-text-strong transition-colors hover:text-accent"
       style={{
-        fontSize: "var(--density-overview-title)",
+        fontSize: "var(--ui-section-title)",
         ...style,
       }}
     >
@@ -212,7 +213,7 @@ export function SparkPage({ spark, temperatureUnit, onEdit }: SparkPageProps) {
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--density-page-gap)" }}>
+    <div className="machine-page" data-node-role={spark.role} style={{ display: "flex", flexDirection: "column", gap: "var(--density-page-gap)" }}>
       <SparkHeader spark={spark} onEdit={onEdit} />
       {/* Mobile-only action row (Update Hermes / Shutdown·Wake / Edit) — desktop keeps them in the header. */}
       <SparkActions
@@ -222,7 +223,7 @@ export function SparkPage({ spark, temperatureUnit, onEdit }: SparkPageProps) {
       />
       <div className="spark-page grid grid-cols-1 md:grid-cols-2" style={{ gap: "var(--density-page-gap)" }}>
         <SectionHeading
-          title="Resources"
+          title="资源"
           open={resourcesOpen}
           onToggle={toggleResources}
           style={{ marginTop: "var(--density-page-gap)" }}
@@ -234,6 +235,7 @@ export function SparkPage({ spark, temperatureUnit, onEdit }: SparkPageProps) {
               <>
                 <GpuPanel
                   gpu={metrics.gpu}
+                  unavailable={!gpuReady(spark)}
                   sparkId={spark.id}
                   temperatureUnit={temperatureUnit}
                   className={tailscaleOn ? "md:row-span-4" : "md:row-span-3"}
@@ -265,6 +267,7 @@ export function SparkPage({ spark, temperatureUnit, onEdit }: SparkPageProps) {
               <>
                 <GpuPanel
                   gpu={metrics.gpu}
+                  unavailable={!gpuReady(spark)}
                   cpu={metrics.cpu}
                   sparkId={spark.id}
                   temperatureUnit={temperatureUnit}
@@ -298,7 +301,7 @@ export function SparkPage({ spark, temperatureUnit, onEdit }: SparkPageProps) {
         */}
         {showServices && (
           <SectionHeading
-            title="Services"
+            title="服务"
             open={servicesOpen}
             onToggle={toggleServices}
             style={{ marginTop: "var(--density-page-gap)" }}
@@ -339,7 +342,7 @@ export function SparkPage({ spark, temperatureUnit, onEdit }: SparkPageProps) {
                       min={1}
                       max={65535}
                       inputMode="numeric"
-                      placeholder="Port number"
+                      placeholder="端口号"
                       value={newPortDraft}
                       onChange={(e) => setNewPortDraft(e.target.value)}
                       onKeyDown={(e) => {
@@ -357,7 +360,7 @@ export function SparkPage({ spark, temperatureUnit, onEdit }: SparkPageProps) {
                       disabled={!newPortDraft.trim()}
                       className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
                     >
-                      Add
+                      添加
                     </button>
                     <button
                       type="button"
@@ -367,7 +370,7 @@ export function SparkPage({ spark, temperatureUnit, onEdit }: SparkPageProps) {
                       }}
                       className="rounded border border-border px-3 py-1.5 text-xs text-muted hover:bg-surface-hover"
                     >
-                      Cancel
+                      取消
                     </button>
                   </div>
                 </div>
@@ -377,7 +380,7 @@ export function SparkPage({ spark, temperatureUnit, onEdit }: SparkPageProps) {
                   onClick={() => setShowAddPort(true)}
                   className="md:col-span-2 rounded-lg border border-dashed border-border bg-transparent p-3 text-xs text-muted hover:border-accent hover:text-accent transition-colors"
                 >
-                  + Add LLM port
+                  + 添加 LLM 端口
                 </button>
               ))}
           </>

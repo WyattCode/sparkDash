@@ -469,6 +469,7 @@ export interface SparkMetrics {
 
 // ─── Spark snapshot (server pushes this) ──────────────────
 export interface SparkSnapshot {
+  telemetry?: { updatedAt: Record<string, number>; successful: Record<string, boolean> };
   id: string;
   name: string;
   /** Unit type: spark (DGX Spark) or host (dedicated GPU Linux box). */

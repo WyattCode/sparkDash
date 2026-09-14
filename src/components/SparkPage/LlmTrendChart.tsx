@@ -59,7 +59,7 @@ function fmtSpan(seconds: number): string {
 }
 
 function historyLabel(): string {
-  return `last 30m · averages since page opened (up to ${fmtSpan(HISTORY_MAX * 2)})`;
+  return `最近 30 分钟 · 页面打开后的平均值（最长 ${fmtSpan(HISTORY_MAX * 2)}）`;
 }
 
 /** Newest DISPLAY_WINDOW samples — the slice the chart draws. */
@@ -114,12 +114,12 @@ export function LlmTrendChart({
     <div className="border-t border-border pt-3 space-y-1.5">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] uppercase tracking-wide text-muted">
-          tok/s history
+          吞吐历史 · tok/s
         </span>
         <span className="text-[10px] text-muted">{historyLabel()}</span>
       </div>
       {!hasData ? (
-        <p className="text-[10px] text-muted">No samples yet.</p>
+        <p className="text-[10px] text-muted">暂无采样数据。</p>
       ) : (
         <svg
           viewBox={`0 0 ${VIEW_W} ${VIEW_H}`}
@@ -127,7 +127,7 @@ export function LlmTrendChart({
           className="block w-full"
           style={{ height: 64 }}
           role="img"
-          aria-label="Generation and prefill tokens per second over the last 30 minutes"
+          aria-label="过去 30 分钟的生成与预填充吞吐量"
         >
           {prefillPts.map((points, index) => (
             <g key={`prefill-${index}`}>
@@ -136,6 +136,7 @@ export function LlmTrendChart({
                 points={points}
                 fill="none"
                 stroke="var(--color-text)"
+                strokeDasharray="4 3"
                 strokeWidth="1.5"
                 vectorEffect="non-scaling-stroke"
                 strokeLinejoin="round"
@@ -145,11 +146,11 @@ export function LlmTrendChart({
           ))}
           {genPts.map((points, index) => (
             <g key={`gen-${index}`}>
-              <path d={areaPath(points)} fill="var(--color-accent)" opacity={0.12} />
+              <path d={areaPath(points)} fill="var(--color-data)" opacity={0.12} />
               <polyline
                 points={points}
                 fill="none"
-                stroke="var(--color-accent)"
+                stroke="var(--color-data)"
                 strokeWidth="1.5"
                 vectorEffect="non-scaling-stroke"
                 strokeLinejoin="round"
@@ -161,20 +162,20 @@ export function LlmTrendChart({
       )}
       <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[10px] text-muted">
         <span>
-          Gen avg{" "}
-          <span className="font-tabular text-xs text-accent">{fmt(genAvg)}</span>
+          生成平均值{" "}
+          <span className="font-tabular text-xs text-data">{fmt(genAvg)}</span>
         </span>
         <span>
-          Prefill avg{" "}
+          预填充平均值{" "}
           <span className="font-tabular text-xs text-text">{fmt(prefillAvg)}</span>
         </span>
         <span>
-          TTFT avg{" "}
+          TTFT 平均值{" "}
           <span className="font-tabular text-xs text-muted">
             {ttftAvg != null ? `${ttftAvg.toFixed(3)}s` : "—"}
           </span>
         </span>
-        <span className="text-[9px]">avg over busy samples only</span>
+        <span className="text-[9px]">仅统计繁忙时段平均值</span>
       </div>
     </div>
   );

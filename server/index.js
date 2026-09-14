@@ -1,7 +1,7 @@
 import express from "express";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
-import { spawn } from "child_process";
+import { createReadinessInspector, createShutdownLock, shutdownBatch, initiateSparkShutdown as executeShutdown } from "./shutdown.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -17,8 +17,10 @@ import {
   validateDecodeBudget,
   validatePrefillBudget,
 } from "./validate.js";
-import { authorizeUpgrade, configuredToken, createAuthMiddleware, requireRemoteAuth } from "./auth.js";
+import { authMode, authorizeUpgrade, configuredToken, createAuthMiddleware, requireRemoteAuth } from "./auth.js";
 import { inspectHealth } from "./health.js";
+import { registerOperationsRoutes } from "./operations.js";
+import { registerVerificationRoutes } from "./serviceVerification.js";
 import { getSettings, updateSettings, loadSettings } from "./settings.js";
 import { broadcastForLanIp, effectiveMac, normalizeMac, sendWol } from "./wol.js";
 import {
@@ -289,6 +291,8 @@ const server = createServer(app);
 
 app.use(express.json());
 app.use(createAuthMiddleware());
+registerOperationsRoutes(app, orderedSnapshots, path.join(ROOT, 'config', 'operations-events.json'));
+registerVerificationRoutes(app, {snapshots:orderedSnapshots,getSpark:id=>registry.getSpark(id),file:path.join(ROOT,'config','service-verification.json')});
 
 app.get("/api/health", (_req, res) => {
   res.json(inspectHealth(process.env.BIND_HOST || "127.0.0.1"));
@@ -1400,19 +1404,6 @@ app.delete("/api/sparks/:id/llm/showcase/:sessionId", (req, res) => {
 // These routes are unauthenticated like the rest of the LAN dashboard — do not
 // expose port 5555 beyond a trusted network.
 
-const SHUTDOWN_BIN = "/usr/local/bin/spark-shutdown";
-/**
- * Remote: verify script + passwordless sudo, then background shutdown so SSH
- * returns before the host dies. Failures before backgrounding surface to the UI.
- */
-const SHUTDOWN_REMOTE_CMD = [
-  `test -x ${SHUTDOWN_BIN} || { echo "missing ${SHUTDOWN_BIN}" >&2; exit 127; }`,
-  `sudo -n true || { echo "sudo -n required for ${SHUTDOWN_BIN}" >&2; exit 126; }`,
-  `nohup sudo -n ${SHUTDOWN_BIN} >/dev/null 2>&1 &`,
-  `sleep 0.3`,
-  `exit 0`,
-].join("; ");
-
 function shutdownErrorStatus(msg) {
   if (/timed out|connection refused|unreachable|no route|ECONNREFUSED|ETIMEDOUT/i.test(msg)) {
     return 503;
@@ -1420,89 +1411,32 @@ function shutdownErrorStatus(msg) {
   return 500;
 }
 
-/**
- * Only treat "host dropped the SSH session mid-shutdown" as success.
- * Connect timeouts / auth / missing script must remain real errors.
- */
-function isBenignShutdownSshError(msg) {
-  return /ECONNRESET|Connection reset|broken pipe|Connection closed by remote|closed by remote host|Connection to .* closed/i.test(
-    String(msg || "")
-  );
+/** A lost response is unconfirmed, never proof that a host powered off. */
+const shutdownReadiness = createReadinessInspector({remoteExec:sshExec});
+const withShutdownLock = createShutdownLock();
+async function initiateSparkShutdown(spark) {
+  const readiness = await shutdownReadiness(spark, true);
+  if (!readiness.ready) throw Object.assign(new Error(readiness.message), {status:409});
+  return executeShutdown(spark, { remoteExec: sshExec });
 }
 
-/**
- * Kick off graceful shutdown. Always aims to return quickly so the browser
- * gets a real JSON response instead of "Failed to fetch" when the SSH session
- * drops as the host powers off.
- */
-function initiateSparkShutdown(spark) {
-  if (spark.isLocal) {
-    return new Promise((resolve, reject) => {
-      try {
-        const child = spawn("sudo", ["-n", SHUTDOWN_BIN], {
-          detached: true,
-          stdio: "ignore",
-        });
-        child.on("error", (err) => {
-          const msg = err.message || String(err);
-          if (/ENOENT|not found/i.test(msg)) {
-            reject(new Error(`${SHUTDOWN_BIN} not found on this host`));
-          } else {
-            reject(new Error(msg));
-          }
-        });
-        child.unref();
-        resolve("Shutdown initiated");
-      } catch (err) {
-        reject(err);
-      }
-    });
-  }
-
-  return sshExec(spark, SHUTDOWN_REMOTE_CMD, { timeoutMs: 8000 })
-    .then(() => "Shutdown initiated")
-    .catch((err) => {
-      const msg = err.message || String(err);
-      if (isBenignShutdownSshError(msg)) {
-        return "Shutdown initiated";
-      }
-      throw err;
-    });
-}
+app.get('/api/sparks/:id/power-readiness', async(req,res)=>{
+  const spark=registry.getSpark(req.params.id);
+  if(!spark)return res.status(404).json({error:'找不到节点'});
+  res.json(await shutdownReadiness(spark));
+});
 
 /** Batch routes first so they never collide with /:id/* if routing changes. */
 app.post("/api/sparks/shutdown-all", async (_req, res) => {
-  const results = [];
   // Remotes first, local last — shutting down the dashboard host mid-loop would
   // skip remaining Sparks.
   const ordered = [
     ...registry.sparks.filter((s) => !s.isLocal),
     ...registry.sparks.filter((s) => s.isLocal),
   ];
-  for (const spark of ordered) {
-    const monitor = monitors.get(spark.id);
-    if (!monitor?.online) {
-      results.push({ id: spark.id, ok: false, skipped: true, error: "Offline — skipped" });
-      continue;
-    }
-    try {
-      // Local dashboard host: acknowledge before power-off kills this process.
-      if (spark.isLocal) {
-        results.push({ id: spark.id, ok: true, message: "Shutdown initiated" });
-        setImmediate(() => {
-          void initiateSparkShutdown(spark).catch((err) => {
-            console.error(`[shutdown-all] local ${spark.id}:`, err.message);
-          });
-        });
-        continue;
-      }
-      await initiateSparkShutdown(spark);
-      results.push({ id: spark.id, ok: true });
-    } catch (err) {
-      results.push({ id: spark.id, ok: false, error: err.message || String(err) });
-    }
-  }
-  res.json({ success: true, results });
+  try {
+    res.json(await withShutdownLock(ordered.map(s=>s.id),()=>shutdownBatch(ordered, {isOnline:s=>!!monitors.get(s.id)?.online,inspect:shutdownReadiness,execute:initiateSparkShutdown})));
+  } catch(error) {res.status(error.status||503).json({error:error.status?error.message:'无法确认批量关机状态，请检查后重试'});}
 });
 
 app.post("/api/sparks/wake-all", async (_req, res) => {
@@ -1533,24 +1467,12 @@ app.post("/api/sparks/:id/shutdown", async (req, res) => {
     const spark = registry.getSpark(req.params.id);
     if (!spark) return res.status(404).json({ error: "Spark not found" });
 
-    // Local: send JSON first, then power off — otherwise the process dies mid-response
-    // and the UI shows "Failed to fetch".
-    if (spark.isLocal) {
-      res.json({ success: true, message: "Shutdown initiated" });
-      setImmediate(() => {
-        void initiateSparkShutdown(spark).catch((err) => {
-          console.error(`[shutdown] local ${spark.id}:`, err.message);
-        });
-      });
-      return;
-    }
-
     try {
-      const message = await initiateSparkShutdown(spark);
+      const message = await withShutdownLock([spark.id],()=>initiateSparkShutdown(spark));
       res.json({ success: true, message, output: message });
     } catch (err) {
       const msg = err.message || String(err);
-      res.status(shutdownErrorStatus(msg)).json({
+      res.status(err.status || shutdownErrorStatus(msg)).json({
         error: shutdownErrorStatus(msg) === 503 ? `Spark unreachable: ${msg}` : msg,
       });
     }
@@ -1714,9 +1636,9 @@ if (!startupPreflight.fatal) {
     console.log(`[sparkDash] WebSocket endpoint ws://${BIND_HOST}:${PORT}/ws`);
     const remote = requireRemoteAuth(BIND_HOST);
     const tokenConfigured = Boolean(configuredToken());
-    console.log(`[sparkDash] bind=${BIND_HOST} auth=${tokenConfigured ? "bearer" : remote ? "required-missing" : "loopback-open"}`);
+    console.log(`[sparkDash] bind=${BIND_HOST} auth=${authMode(BIND_HOST)}`);
     if (remote && !tokenConfigured) {
-      console.warn("[sparkDash] WARNING: remote bind without SPARKDASH_TOKEN — mutations and telemetry will fail closed until a token is set.");
+      console.warn("[sparkDash] WARNING: remote-open mode — telemetry and actions are available without a token. Restrict access to a trusted network.");
     }
     startAllMonitors();
     fleetEnergyRuntime.start();

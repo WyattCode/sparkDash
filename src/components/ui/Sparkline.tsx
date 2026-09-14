@@ -16,7 +16,7 @@ export function Sparkline({
   data,
   width = 84,
   height = 24,
-  color = "var(--color-accent)",
+  color = "var(--color-data)",
   area = true,
 }: SparklineProps) {
   if (data.length < 2) {

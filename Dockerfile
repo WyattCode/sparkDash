@@ -56,7 +56,9 @@ COPY --from=builder /app/package-lock.json ./package-lock.json
 COPY --from=builder /app/server ./server
 COPY --from=builder /app/src/shared ./src/shared
 COPY --from=builder /app/src/components/ShowcasePage/showcasePrompts.ts ./src/components/ShowcasePage/showcasePrompts.ts
-COPY --from=builder /app/config ./config
+# Runtime configuration and secrets arrive through the persistent volume.
+# Never bake credentials or live telemetry records into distributable layers.
+RUN mkdir -p /app/config
 
 # Volume for persistent sparks.json
 VOLUME /app/config

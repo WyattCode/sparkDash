@@ -8,18 +8,18 @@ export function useFocusTrap(active: boolean) {
     if (!active) return;
     previous.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     const root = ref.current;
-    const focusables = () => Array.from(root?.querySelectorAll<HTMLElement>("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])") ?? []).filter((el) => !el.hasAttribute("disabled"));
-    focusables()[0]?.focus();
+    const focusables = () => Array.from(root?.querySelectorAll<HTMLElement>("button, [href], input, select, textarea, [tabindex]:not([tabindex='-1'])") ?? []).filter((el) => !el.matches(":disabled") && !el.closest('[hidden], [inert], [aria-hidden="true"]'));
+    (focusables()[0] ?? root)?.focus();
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== "Tab" || !root) return;
       const items = focusables();
-      if (items.length === 0) return;
+      if (items.length === 0) { event.preventDefault(); root.focus(); return; }
       const first = items[0];
       const last = items[items.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
+      if (event.shiftKey && (document.activeElement === first || !items.includes(document.activeElement as HTMLElement))) {
         event.preventDefault();
         last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
+      } else if (!event.shiftKey && (document.activeElement === last || !items.includes(document.activeElement as HTMLElement))) {
         event.preventDefault();
         first.focus();
       }

@@ -17,17 +17,17 @@ export function TailscalePanel({ tailscale }: TailscalePanelProps) {
   const offTailnet = available && online === false;
 
   const status = !available
-    ? { label: "unknown", cls: "text-muted" }
+    ? { label: "未知", cls: "text-muted" }
     : online === true
-      ? { label: "online", cls: "text-accent" }
+      ? { label: "在线", cls: "text-accent" }
       : online === false
-        ? { label: "OFF TAILNET", cls: "text-danger" }
-        : { label: "unknown", cls: "text-muted" };
+        ? { label: "Tailnet 离线", cls: "text-danger" }
+        : { label: "未知", cls: "text-muted" };
 
   return (
     <Panel title="Tailnet" accent={offTailnet} icon={<NetworkIcon />}>
       <div className="mb-3 flex items-center gap-2 text-xs">
-        <span className="text-muted">Status</span>
+        <span className="text-muted">状态</span>
         <span className={`font-tabular font-medium ${status.cls}`}>{status.label}</span>
         {tailscale?.backendState && (
           <span className="ml-auto chip py-0.5">{tailscale.backendState}</span>
@@ -55,12 +55,12 @@ export function TailscalePanel({ tailscale }: TailscalePanelProps) {
 
       <div className="space-y-2">
         {tailscale?.tailscaleIp && <Row label="IP" value={tailscale.tailscaleIp} tabular />}
-        {tailscale?.hostName && <Row label="Host" value={tailscale.hostName} />}
-        {tailscale?.relay && <Row label="Relay" value={tailscale.relay} />}
-        {tailscale?.keyExpired && <Row label="Key" value="EXPIRED — needs re-auth" danger />}
-        {tailscale?.version && <Row label="Version" value={tailscale.version} tabular />}
+        {tailscale?.hostName && <Row label="主机" value={tailscale.hostName} />}
+        {tailscale?.relay && <Row label="中继" value={tailscale.relay} />}
+        {tailscale?.keyExpired && <Row label="密钥" value="EXPIRED — needs re-auth" danger />}
+        {tailscale?.version && <Row label="版本" value={tailscale.version} tabular />}
         {!available && !tailscale?.error && (
-          <p className="text-xs text-muted">Waiting for first poll…</p>
+          <p className="text-xs text-muted">等待首次采集…</p>
         )}
       </div>
     </Panel>

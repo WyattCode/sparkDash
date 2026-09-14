@@ -22,22 +22,22 @@ export function ConnectionBanner({
 }: ConnectionBannerProps) {
   if (connected && !snapshotError && !stale) return null;
 
-  let message = "Connecting to live telemetry…";
+  let message = "正在连接实时遥测…";
   if (snapshotError) message = snapshotError;
   else if (lastValidSnapshotAt != null) {
     const age = formatAge(now - lastValidSnapshotAt);
     message = connected
-      ? `Telemetry is stale. Last valid update was ${age} ago.`
-      : `Live telemetry disconnected. Showing data from ${age} ago.`;
+      ? `遥测数据已过期，上次有效更新在 ${age} 前。`
+      : `实时遥测已断开，正在显示 ${age} 前的数据。`;
   } else if (!connected) {
-    message = "Live telemetry is disconnected. Waiting for the first valid update…";
+    message = "实时遥测已断开，正在等待首次有效更新…";
   }
 
   const announced = snapshotError
-    ? "Telemetry data error."
+    ? "遥测数据错误。"
     : connected
-      ? "Telemetry is stale."
-      : "Live telemetry is disconnected.";
+      ? "遥测数据已过期。"
+      : "实时遥测已断开。";
 
   return (
     <div className="connection-banner">

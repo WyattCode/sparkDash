@@ -20,6 +20,10 @@ export function allowOpenRemote() {
   return v === "1";
 }
 
+export function authMode(bindHost, token = Boolean(configuredToken()), openRemote = allowOpenRemote()) {
+  return token ? 'bearer' : requireRemoteAuth(bindHost) ? (openRemote ? 'remote-open' : 'required-missing') : 'loopback-open';
+}
+
 function tokensEqual(left, right) {
   const a = Buffer.from(String(left));
   const b = Buffer.from(String(right));
@@ -37,7 +41,11 @@ export function extractBearer(req) {
 
 export function authenticate(req) {
   const expected = configuredToken();
-  if (!expected) return { ok: true, mode: "open-loopback" };
+  if (!expected) {
+    const mode = authMode(process.env.BIND_HOST || '127.0.0.1');
+    if (mode === 'required-missing') return {ok:false,status:403,error:'Remote access requires SPARKDASH_TOKEN'};
+    return { ok: true, mode };
+  }
   const provided = extractBearer(req);
   if (!provided || !tokensEqual(provided, expected)) {
     return { ok: false, status: 401, error: "Authentication required" };

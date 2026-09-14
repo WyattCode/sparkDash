@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { HOST_PATHS, SPARKS_JSON_PATH } from "./config.js";
-import { allowOpenRemote, configuredToken, requireRemoteAuth } from "./auth.js";
+import { allowOpenRemote, authMode, configuredToken, requireRemoteAuth } from "./auth.js";
 
 export function evaluateHealth({ bindHost, configWritable, secretsKeyPresent, sshIdentityPresent }) {
   const remote = requireRemoteAuth(bindHost);
@@ -11,13 +11,14 @@ export function evaluateHealth({ bindHost, configWritable, secretsKeyPresent, ss
   if (remote && !token && !allowOpenRemote()) {
     errors.push("Remote bind requires SPARKDASH_TOKEN");
   }
+  if (remote && !token && allowOpenRemote()) warnings.push('Remote access is open without a token; use only on a trusted network');
   if (!configWritable) errors.push("Config directory is not writable");
   if (!secretsKeyPresent) warnings.push("Secrets key is not present yet");
   if (!sshIdentityPresent) warnings.push("SSH identity is not mounted");
   return {
     ok: errors.length === 0,
     bindHost,
-    authMode: token ? "bearer" : remote ? "required-missing" : "loopback-open",
+    authMode: authMode(bindHost),
     errors,
     warnings,
   };

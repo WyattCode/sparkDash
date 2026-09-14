@@ -1,0 +1,70 @@
+/* Product semantics: gold = interaction, blue/purple = data, green/orange/red = status.
+   Final shared theme layer. Keep component-specific layout in its own stylesheet. */
+:root, [data-theme="light"], [data-theme="white"] {
+  --color-accent: #895500;
+  --color-accent-hover: #714500;
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 10%, transparent);
+  --color-success: #18704f;
+  --color-warning: #a14800;
+  --color-danger: #b52b36;
+  --color-chart-primary: #2469a6;
+  --color-chart-secondary: #7651ab;
+  --color-data: var(--color-chart-primary);
+  --color-on-accent: #ffffff;
+  --radius-panel: 8px;
+  --radius-sm: 6px;
+}
+[data-theme="dark"], [data-theme="oled"] {
+  --color-accent: #e8b34a;
+  --color-accent-hover: #f2c56c;
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 12%, transparent);
+  --color-success: #62c6a0;
+  --color-warning: #f5a262;
+  --color-danger: #ff828b;
+  --color-chart-primary: #83b8ee;
+  --color-chart-secondary: #baa0e5;
+  --color-on-accent: #171717;
+  --color-muted: #a3a3a3;
+}
+[data-node-role="worker"] { --color-data: var(--color-chart-secondary); }
+.bg-data { background-color: var(--color-data); }
+.text-data { color: var(--color-data); }
+.app-frame .comparison-metric__track span { background: var(--color-chart-primary); }
+.app-frame .comparison-metric__track span.is-worker { background: var(--color-chart-secondary); }
+.app-frame .node-identity-tag { background: color-mix(in srgb, var(--color-data) 10%, var(--color-surface)); color: var(--color-data); }
+.app-frame .metadata-tag, .app-frame .llm-badge { background: var(--color-surface-elevated); color: var(--color-muted-strong); }
+.app-frame .node-secondary-metrics .text-accent { color: var(--color-text); }
+.app-frame .online-chip { border: 1px solid var(--color-border); border-radius: 6px; box-shadow: none; }
+.app-frame .dot-glow-success, .app-frame .online-chip .dot, .app-frame .status-pill .dot { box-shadow: none; }
+.app-frame :is(button,a,input,select,textarea,summary):focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
+.app-frame button:disabled { cursor: not-allowed; }
+.app-frame button.bg-accent { color: var(--color-on-accent); }
+.app-frame .ui-action-primary { color: var(--color-accent); background: var(--color-accent-soft); border-color: color-mix(in srgb, var(--color-accent) 60%, var(--color-border)); font-weight: 600; }
+.app-frame .ui-action-primary:hover:not(:disabled) { color: var(--color-accent-hover); border-color: var(--color-accent); background: var(--color-accent-soft); }
+.app-frame .ops-tabs button[aria-pressed="true"] { background: var(--color-surface-hover); color: var(--color-text-strong); }
+.app-frame .ops-stat small { font-size: 12px; }
+.app-frame .node-secondary-metrics { font-size: 13px; }
+.startup-screen { min-height: 100dvh; display: grid; place-items: center; color: var(--color-muted); font-size: 13px; }
+html { scrollbar-gutter: stable; }
+.app-frame a.logo-pill { text-decoration: none; cursor: pointer; }
+.app-frame .node-throughput-value { font-size: 22px; line-height: 1.4; position: relative; top: 4px; }
+.app-frame .node-throughput-label { font-size: 14px; line-height: 1.5; position: relative; top: 4px; }
+.app-frame .machine-page .panel .text-xs { font-size: 13px; }
+.app-frame .machine-page .panel .text-sm { font-size: 14px; }
+.app-frame .spark-header .metadata-tag { font-size: 11px; }
+.app-frame .machine-section-heading { min-height: 36px; }
+.app-frame .panel > header button { min-height: 32px; padding: 6px 10px; font-size: 12px; border: 1px solid var(--color-border); border-radius: 5px; background: var(--color-surface-elevated); color: var(--color-text); }
+.app-frame .panel > header button:hover { border-color: var(--color-border-strong); background: var(--color-surface-hover); }
+.app-frame .ops-status-value { font-size: 18px; }
+.app-frame .ops-status-value[data-tone="success"] { color: var(--color-success); }
+.app-frame .ops-status-value[data-tone="warning"] { color: var(--color-warning); }
+.app-frame .ops-status-value[data-tone="danger"] { color: var(--color-danger); }
+@media (max-width: 700px) {
+  .app-frame .node-throughput-value { font-size: 20px; }
+  .app-frame .ops-status-value { font-size: 16px; }
+  .app-frame .node-secondary-metrics > div { min-width: 0; }
+  .app-frame .node-secondary-metrics .truncate { white-space: normal; overflow-wrap: anywhere; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-frame *, .app-frame *::before, .app-frame *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}

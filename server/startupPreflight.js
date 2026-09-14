@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import { HOST_PATHS, SPARKS_JSON_PATH } from "./config.js";
-import { allowOpenRemote } from "./auth.js";
+import { allowOpenRemote, authMode, configuredToken } from "./auth.js";
 
 export function isLoopbackHost(host) {
   return host === "localhost" || host === "::1" || /^127\./.test(host || "");
@@ -31,7 +31,7 @@ export function evaluateStartupPreflight(input) {
   if (!input.localCollectors?.available) warnings.push("Local host metrics are unavailable; verify /proc and /sys host mounts.");
   return {
     fatal: errors.length > 0,
-    authMode: loopback ? "loopback-only" : input.tokenConfigured ? "bearer" : "required-missing",
+    authMode: authMode(input.bindHost, Boolean(input.tokenConfigured), Boolean(input.allowOpenRemote)),
     errors,
     warnings,
   };
@@ -58,7 +58,7 @@ export function inspectStartupPreflight(bindHost) {
   }
   return evaluateStartupPreflight({
     bindHost,
-    tokenConfigured: Boolean(process.env.SPARKDASH_TOKEN || process.env.DASHBOARD_TOKEN),
+    tokenConfigured: Boolean(configuredToken()),
     allowOpenRemote: allowOpenRemote(),
     configWritable: pathWritable(configDir),
     secretsKey: {

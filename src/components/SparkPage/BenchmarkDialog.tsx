@@ -66,13 +66,13 @@ function formatDuration(ms: number): string {
 function statusLabel(status: DecodeBenchJob["status"]): string {
   switch (status) {
     case "running":
-      return "Running";
+      return "运行中";
     case "completed":
-      return "Completed";
+      return "已完成";
     case "failed":
-      return "Failed";
+      return "失败";
     case "cancelled":
-      return "Cancelled";
+      return "已取消";
     default:
       return status;
   }
@@ -123,21 +123,21 @@ function ResultRow({ r }: { r: DecodeBenchJob["results"][number] }) {
             <strong>
               {r.streamsOk}/{r.streamsOk + r.streamsFailed}
             </strong>{" "}
-            streams
+            条流
           </span>
         </div>
       </div>
 
       <div className="bench-result-row__speeds">
         <div className="bench-result-row__metric">
-          <span className="bench-result-row__label">Aggregate</span>
+          <span className="bench-result-row__label">合计</span>
           <span className="bench-result-row__value bench-result-row__value--accent">
             {(r.aggregateDecodeTps > 0 ? r.aggregateDecodeTps : r.meanDecodeTps).toFixed(1)}
             <span className="bench-result-row__unit">tok/s</span>
           </span>
         </div>
         <div className="bench-result-row__metric">
-          <span className="bench-result-row__label">Stream</span>
+          <span className="bench-result-row__label">流</span>
           <span className="bench-result-row__value">
             {r.meanDecodeTps.toFixed(1)}
             <span className="bench-result-row__unit">tok/s</span>
@@ -234,7 +234,7 @@ export function BenchmarkDialog({
                 }
                 setError(
                   err.message === "Benchmark not found"
-                    ? "Benchmark interrupted — server restarted during the run"
+                    ? "基准测试中断，运行期间服务已重启"
                     : err.message
                 );
                 stopPoll();
@@ -242,7 +242,7 @@ export function BenchmarkDialog({
               .catch(() => {
                 setError(
                   err.message === "Benchmark not found"
-                    ? "Benchmark interrupted — server restarted during the run"
+                    ? "基准测试中断，运行期间服务已重启"
                     : err.message
                 );
                 stopPoll();
@@ -313,12 +313,12 @@ export function BenchmarkDialog({
 
   const handleStart = async () => {
     if (selected.length === 0) {
-      setError("Select at least one concurrency level");
+      setError("请至少选择一个并发档位");
       return;
     }
     const maxTokens = parseInt(maxTokensDraft.trim(), 10);
     if (!Number.isInteger(maxTokens) || maxTokens < 64 || maxTokens > 2048) {
-      setError("Max tokens must be an integer between 64 and 2048");
+      setError("最大 Token 数必须是 64–2048 之间的整数");
       return;
     }
     setStarting(true);
@@ -381,7 +381,7 @@ export function BenchmarkDialog({
       if (copyResetRef.current != null) clearTimeout(copyResetRef.current);
       copyResetRef.current = setTimeout(() => setCopied(false), 1800);
     } catch {
-      setError("Could not copy results to clipboard");
+      setError("无法将结果复制到剪贴板");
     }
   };
 
@@ -417,7 +417,7 @@ export function BenchmarkDialog({
       <button
         type="button"
         className="bench-overlay__scrim"
-        aria-label="Close dialog"
+        aria-label="关闭对话框"
         onClick={() => {
           if (!isRunning) onClose();
         }}
@@ -432,7 +432,7 @@ export function BenchmarkDialog({
         <header className="bench-sheet__header">
           <div className="bench-sheet__header-text">
             <h2 id="bench-title" className="bench-sheet__title">
-              Decode benchmark
+              解码基准测试
             </h2>
             <p className="bench-sheet__subtitle">
               {remoteTarget
@@ -445,7 +445,7 @@ export function BenchmarkDialog({
             type="button"
             className="bench-sheet__close"
             onClick={onClose}
-            aria-label="Close"
+            aria-label="关闭"
           >
             ✕
           </button>
@@ -453,23 +453,23 @@ export function BenchmarkDialog({
 
         <div className="bench-sheet__body">
           {loadingLast && !job && (
-            <p className="bench-sheet__hint">Loading last results…</p>
+            <p className="bench-sheet__hint">正在加载上次结果…</p>
           )}
 
           {showConfig && (
             <section className="bench-sheet__section">
               <div className="bench-field">
                 <div className="bench-field__head">
-                  <h3 className="bench-sheet__section-title">Type</h3>
+                  <h3 className="bench-sheet__section-title">类型</h3>
                   <p className="bench-sheet__hint">
                     {DECODE_BENCH_TYPE_META.find((t) => t.id === promptType)?.hint}
-                    {" · temp 0, thinking off"}
+                    {"· 温度 0，关闭思考"}
                   </p>
                 </div>
                 <div
                   className="bench-type-grid"
                   role="radiogroup"
-                  aria-label="Decode benchmark type"
+                  aria-label="解码基准测试类型"
                 >
                   {DECODE_BENCH_TYPE_META.map((t) => {
                     const on = promptType === t.id;
@@ -493,9 +493,9 @@ export function BenchmarkDialog({
 
               <div className="bench-field">
                 <div className="bench-field__head">
-                  <h3 className="bench-sheet__section-title">Concurrency</h3>
+                  <h3 className="bench-sheet__section-title">并发数</h3>
                   <p className="bench-sheet__hint">
-                    Levels run sequentially; each opens that many parallel streams.
+                    各档位依次运行，每个档位开启对应数量的并行流。
                   </p>
                 </div>
                 <div className="bench-conc-grid">
@@ -519,11 +519,11 @@ export function BenchmarkDialog({
               <div className="bench-field">
                 <div className="bench-field__head">
                   <label htmlFor="bench-max-tokens" className="bench-sheet__section-title">
-                    Max tokens / stream
+                    每条流最大 Token 数
                   </label>
                   <p className="bench-sheet__hint">
-                    Default 400 · temp 0, thinking off
-                    {promptType === "structured" ? " · count 1→200" : ""}
+                    默认 400 · 温度 0，关闭思考
+                    {promptType === "structured" ? "· 数量 1→200" : ""}
                   </p>
                 </div>
                 <input
@@ -551,7 +551,7 @@ export function BenchmarkDialog({
               <div className="bench-progress">
                 <div className="bench-progress__row">
                   <span className="bench-progress__status">
-                    Running
+                    运行中
                     {job.config?.promptType
                       ? ` · ${decodeBenchTypeLabel(job.config.promptType)}`
                       : ""}
@@ -576,7 +576,7 @@ export function BenchmarkDialog({
               </div>
               {job.results.length > 0 && (
                 <div className="bench-results">
-                  <div className="bench-results__caption">Completed levels</div>
+                  <div className="bench-results__caption">已完成的并发档位</div>
                   {job.results.map((r) => (
                     <ResultRow key={r.concurrency} r={r} />
                   ))}
@@ -595,7 +595,7 @@ export function BenchmarkDialog({
                 </span>
                 <span className="bench-status-meta">
                   {decodeBenchTypeLabel(job.config.promptType)} · {job.config.maxTokens} tok ·{" "}
-                  {job.config.concurrencies.join(", ")} conc
+                  {job.config.concurrencies.join(", ")} 并发
                   {job.durationMs != null ? ` · ${formatDuration(job.durationMs)}` : ""}
                 </span>
               </div>
@@ -605,10 +605,10 @@ export function BenchmarkDialog({
               {job.results.length > 0 && (
                 <div className="bench-results bench-results--table">
                   <div className="bench-results__head" aria-hidden="true">
-                    <span>Load</span>
+                    <span>载入</span>
                     <span className="bench-results__head-speeds">
-                      <span>Aggregate</span>
-                      <span>Stream</span>
+                      <span>合计</span>
+                      <span>流</span>
                     </span>
                   </div>
                   {job.results.map((r) => (
@@ -619,8 +619,8 @@ export function BenchmarkDialog({
 
               {job.results.length > 0 && (
                 <p className="bench-legend">
-                  <strong>Aggregate</strong> — total decode tok/s across all concurrent streams.{" "}
-                  <strong>Stream</strong> — per-stream average decode.
+                  <strong>合计</strong> — 所有并发流的解码总吞吐量（tok/s）。{" "}
+                  <strong>流</strong> — 每条流的平均解码吞吐量。
                 </p>
               )}
             </section>
@@ -630,7 +630,7 @@ export function BenchmarkDialog({
         <footer className="bench-sheet__footer">
           {job?.status === "running" ? (
             <button type="button" className="bench-btn bench-btn--ghost" onClick={() => void handleCancel()}>
-              Cancel
+              取消
             </button>
           ) : job ? (
             <>
@@ -639,9 +639,9 @@ export function BenchmarkDialog({
                   type="button"
                   className="bench-btn bench-btn--ghost"
                   onClick={() => void handleClear()}
-                  title="Clear saved results for this port"
+                  title="清除此端口已保存的结果"
                 >
-                  Clear
+                  清除
                 </button>
               )}
               {job.results.length > 0 && (
@@ -649,22 +649,22 @@ export function BenchmarkDialog({
                   type="button"
                   className="bench-btn bench-btn--ghost"
                   onClick={() => void handleCopyResults()}
-                  title="Copy a plain-text summary to the clipboard"
+                  title="将纯文本摘要复制到剪贴板"
                 >
-                  {copied ? "Copied!" : "Copy results"}
+                  {copied ? "已复制！" : "复制结果"}
                 </button>
               )}
               <button type="button" className="bench-btn bench-btn--ghost" onClick={handleNewRun}>
-                New run
+                新建运行
               </button>
               <button type="button" className="bench-btn bench-btn--primary" onClick={onClose}>
-                Done
+                完成
               </button>
             </>
           ) : (
             <>
               <button type="button" className="bench-btn bench-btn--ghost" onClick={onClose}>
-                Close
+                关闭
               </button>
               <button
                 type="button"
@@ -672,7 +672,7 @@ export function BenchmarkDialog({
                 onClick={() => void handleStart()}
                 disabled={starting || selected.length === 0}
               >
-                {starting ? "Starting…" : "Run benchmark"}
+                {starting ? "正在启动…" : "运行基准测试"}
               </button>
             </>
           )}

@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { fetchSettings, updateSettings } from "../api/client";
 import type { Settings } from "../api/types";
 import { useModalPresence } from "../hooks/useModalPresence";
+import { useFocusTrap } from '../hooks/useFocusTrap';
 import packageJson from "../../package.json";
 
 interface SettingsDialogProps {
@@ -10,14 +11,15 @@ interface SettingsDialogProps {
   onSaved: (settings: Settings) => void;
 }
 
-function useEscape(onClose: () => void) {
+function useEscape(enabled:boolean, onClose: () => void) {
   useEffect(() => {
+    if(!enabled)return;
     const handler = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
     };
     document.addEventListener("keydown", handler);
     return () => document.removeEventListener("keydown", handler);
-  }, [onClose]);
+  }, [enabled,onClose]);
 }
 
 const POLL_PRESETS = [
@@ -33,8 +35,10 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
+  const [retry,setRetry]=useState(0);
 
-  useEscape(onClose);
+  useEscape(open&&!saving,onClose);
+  const titleId=useId();
 
   useEffect(() => {
     if (!open) {
@@ -45,6 +49,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
     }
     let cancelled = false;
     setLoading(true);
+    setError(null);
     fetchSettings()
       .then((s) => {
         if (!cancelled) setSettings(s);
@@ -58,9 +63,11 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
     return () => {
       cancelled = true;
     };
-  }, [open]);
+  }, [open,retry]);
 
   const { mounted, visible } = useModalPresence(open);
+  const trapRef=useFocusTrap(mounted);
+  const portValid=!!settings&&Number.isInteger(settings.defaultLlmPort)&&settings.defaultLlmPort>=1&&settings.defaultLlmPort<=65535;
 
   const update = (patch: Partial<Settings>) => {
     setSettings((prev) => (prev ? { ...prev, ...patch } : prev));
@@ -68,7 +75,8 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
   };
 
   const handleSave = async () => {
-    if (!settings) return;
+    if (!settings||saving) return;
+    if(!portValid){setError('端口必须是 1–65535 之间的整数');return;}
     setSaving(true);
     setError(null);
     try {
@@ -92,20 +100,20 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
         visible ? " is-open" : ""
       }`}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (!saving&&e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="settings-panel w-full max-w-sm">
-        <h2 className="shrink-0 px-6 pt-6 text-sm font-semibold text-text-strong">Settings</h2>
+      <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className="settings-panel w-full max-w-sm">
+        <h2 id={titleId} className="shrink-0 px-6 pt-6 text-sm font-semibold text-text-strong">设置</h2>
 
         <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-6 py-4">
-        {loading && <p className="text-xs text-muted">Loading…</p>}
+        {loading && <p className="text-xs text-muted">正在加载…</p>}
 
         {settings && !loading && (
-          <div className="space-y-4">
+          <fieldset disabled={saving} className="m-0 min-w-0 space-y-4 border-0 p-0">
             {/* Poll interval */}
             <div>
-              <label className="mb-2 block text-xs text-muted">Poll interval</label>
+              <label className="mb-2 block text-xs text-muted">轮询间隔</label>
               <div className="flex gap-2">
                 {POLL_PRESETS.map((preset) => (
                   <button
@@ -126,21 +134,23 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
 
             {/* Default LLM port */}
             <div>
-              <label className="mb-1 block text-xs text-muted">Default LLM port</label>
+              <label className="mb-1 block text-xs text-muted">默认 LLM 端口</label>
               <input
                 type="number"
                 min={1}
                 max={65535}
                 value={settings.defaultLlmPort}
+                aria-invalid={!portValid}
                 onChange={(e) => {
-                  const val = parseInt(e.target.value, 10);
+                  const val = Number(e.target.value);
                   if (!isNaN(val)) update({ defaultLlmPort: val });
                 }}
                 className="w-full rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text outline-none focus:border-accent"
               />
               <p className="mt-1 text-[10px] text-muted">
-                Pre-filled when adding a new Spark (1–65535)
+                添加新节点时使用的默认端口（1–65535）
               </p>
+              {!portValid&&<p role="alert" className="mt-1 text-xs text-danger">端口必须是 1–65535 之间的整数。</p>}
             </div>
 
             {/* Auto-hide offline */}
@@ -161,7 +171,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                     }`}
                   />
                 </button>
-                Auto-hide offline Sparks on Overview
+                在概览中自动隐藏离线节点
               </label>
             </div>
 
@@ -184,10 +194,9 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Hide worker nodes</span>
+                  <span className="block text-text">隐藏工作节点</span>
                   <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Removes Worker-role Sparks from Overview and the tab bar. Direct
-                    URLs and batch power / Hermes actions still include them.
+                    在概览和标签栏中隐藏工作节点；直接链接及批量电源、Hermes 操作仍包含这些节点。
                   </span>
                 </span>
               </label>
@@ -214,10 +223,9 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Show search and status filters</span>
+                  <span className="block text-text">显示搜索和状态筛选</span>
                   <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Overview “Search up to 12 units” field and status dropdown
-                    (All / Online / Offline / Issues). One switch for both. Off by default.
+                    显示概览节点搜索框与状态筛选（全部、在线、离线、异常），两者共用此开关，默认关闭。
                   </span>
                 </span>
               </label>
@@ -242,9 +250,9 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Show Fleet Energy</span>
+                  <span className="block text-text">显示集群能耗</span>
                   <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Overview card with rolling fleet power estimates. Off by default.
+                    在概览中显示集群功耗滚动估算卡片，默认关闭。
                   </span>
                 </span>
               </label>
@@ -271,10 +279,9 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Show active fleet exceptions</span>
+                  <span className="block text-text">显示集群当前异常</span>
                   <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Overview strip for offline hosts, GPU throttle, disk, LLM, and
-                    Tailnet alerts. Off by default.
+                    在概览中显示离线、GPU 降频、磁盘、模型和 Tailnet 异常，默认关闭。
                   </span>
                 </span>
               </label>
@@ -301,10 +308,9 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Enable debug traces for Benchmark runs</span>
+                  <span className="block text-text">为基准测试启用调试跟踪</span>
                   <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Stores prompts, HTTP/completion IDs, content previews, and GPU
-                    samples in bench history. Off by default — larger history files.
+                    将提示词、HTTP/生成请求 ID、内容预览及 GPU 采样存入测试历史。默认关闭；启用后文件更大，且可能包含敏感内容。
                   </span>
                 </span>
               </label>
@@ -312,7 +318,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
 
             {/* Temperature unit */}
             <div>
-              <label className="text-xs text-muted">Temperature unit</label>
+              <label className="text-xs text-muted">温度单位</label>
               <div className="mt-1.5 flex gap-2">
                 <button
                   type="button"
@@ -362,14 +368,14 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
                   />
                 </button>
                 <span>
-                  <span className="block text-text">Compact UI</span>
+                  <span className="block text-text">紧凑界面</span>
                   <span className="mt-0.5 block text-[10px] leading-snug text-muted">
-                    Tighter spacing, smaller radius, and reduced font size — fits more Sparks on a single screen.
+                    减小间距、圆角和字号，以在一屏内显示更多节点。
                   </span>
                 </span>
               </label>
             </div>
-          </div>
+          </fieldset>
         )}
 
         {/* Links */}
@@ -398,7 +404,8 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
 
         {error && (
           <div className="shrink-0 px-6 pt-1 text-xs">
-            <div className="rounded bg-danger/20 px-3 py-2 text-danger">{error}</div>
+            <div role="alert" className="rounded bg-danger/20 px-3 py-2 text-danger">{error}</div>
+            {!settings&&<button type="button" className="mt-2 underline" disabled={loading} onClick={()=>setRetry(n=>n+1)}>重新加载设置</button>}
           </div>
         )}
 
@@ -406,17 +413,18 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
           <button
             type="button"
             onClick={onClose}
+            disabled={saving}
             className="min-h-11 rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-muted hover:bg-surface-hover"
           >
-            Cancel
+            取消
           </button>
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || !settings || !dirty}
+            disabled={saving || !settings || !dirty || !portValid}
             className="min-h-11 rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
           >
-            {saving ? "Saving..." : "Save"}
+            {saving ? "正在保存…" : "保存"}
           </button>
         </div>
       </div>

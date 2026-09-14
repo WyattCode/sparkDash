@@ -175,7 +175,7 @@ function TabChrome({
       <button
         type="button"
         className="pill-handle"
-        title="Drag to reorder"
+        title="拖动以排序"
         aria-label={`Reorder ${spark.name}`}
         {...dragHandleProps}
       >
@@ -285,10 +285,10 @@ export function SparkTabs({
           type="button"
           className="icon-circle"
           onClick={() => setMobileMenuOpen((v) => !v)}
-          aria-label="Select Spark"
+          aria-label="选择 Spark"
           aria-expanded={mobileMenuOpen}
           aria-controls="mobile-spark-menu"
-          title="Select Spark"
+          title="选择 Spark"
         >
           <HamburgerIcon className="h-4 w-4" />
         </button>
@@ -331,7 +331,7 @@ export function SparkTabs({
 
   if (!canReorder) {
     return (
-      <nav className="pill-nav" aria-label="Sparks">
+      <nav className="pill-nav" aria-label="节点">
         <OverviewTab isActive={activeId === OVERVIEW_ID} onSelect={onSelect} />
         {sparks.map((spark) => (
           <div key={spark.id} className="shrink-0">
@@ -356,7 +356,7 @@ export function SparkTabs({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <nav className="pill-nav" aria-label="Sparks">
+      <nav className="pill-nav" aria-label="节点">
         <OverviewTab isActive={activeId === OVERVIEW_ID} onSelect={onSelect} />
         {/* rect (not horizontal-list) strategy: .pill-nav wraps onto several
             rows once there are more Sparks than fit one line, and the
@@ -394,8 +394,8 @@ function AddButton({ onAdd }: { onAdd: () => void }) {
     <button
       type="button"
       onClick={onAdd}
-      title="Add Spark/GPU Host"
-      aria-label="Add Spark/GPU Host"
+      title="添加 Spark／GPU 主机"
+      aria-label="添加 Spark／GPU 主机"
       className="pill-add shrink-0"
     >
       <PlusIcon className="h-3.5 w-3.5" />
@@ -419,7 +419,7 @@ function OverviewTab({
         aria-current={isActive ? "page" : undefined}
       >
         <GridIcon className="h-3.5 w-3.5" />
-        Overview
+        概览
       </button>
     </div>
   );
@@ -495,7 +495,7 @@ function MobileSparkMenu({
         onClick={() => handleItemClick(OVERVIEW_ID)}
       >
         <GridIcon className="h-3.5 w-3.5" />
-        Overview
+        概览
       </button>
       {sparks.map((spark) => (
         <button
@@ -521,7 +521,7 @@ function MobileSparkMenu({
         onClick={handleAddClick}
       >
         <PlusIcon className="h-3.5 w-3.5" />
-        Add Spark/GPU Host
+        添加 Spark／GPU 主机
       </button>
     </div>
   );

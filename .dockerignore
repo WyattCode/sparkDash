@@ -8,5 +8,7 @@ dist
 .DS_Store
 node_modules/
 
-# Don't skip server/ or config/ in Docker build
-# They are needed at runtime
+# Persistent config is mounted at runtime, never shipped in image layers.
+config/
+audit/
+design/

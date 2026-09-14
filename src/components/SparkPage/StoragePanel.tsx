@@ -27,7 +27,7 @@ function formatGb(mb: number): string {
 
 function MetricBar({ value, max }: { value: number; max: number }) {
   const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
-  const barColor = pct > 85 ? "bg-danger" : pct > 60 ? "bg-warning" : "bg-accent";
+  const barColor = pct > 85 ? "bg-danger" : pct > 60 ? "bg-warning" : "bg-data";
   return (
     <div className="h-1.5 overflow-hidden rounded-full bg-border">
       <div
@@ -71,7 +71,7 @@ function SettingsButton({
   return (
     <button
       type="button"
-      title={active ? "Done" : `${label} settings`}
+      title={active ? "完成" : `${label} settings`}
       onClick={onClick}
       disabled={disabled}
       className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted transition-colors hover:bg-surface-hover disabled:opacity-50 ${
@@ -79,7 +79,7 @@ function SettingsButton({
       }`}
     >
       <GearIcon />
-      <span>{active ? "Done" : "Settings"}</span>
+      <span>{active ? "完成" : "设置"}</span>
     </button>
   );
 }
@@ -130,7 +130,7 @@ export function StoragePanel({
 
   return (
     <Panel
-      title="Storage"
+      title="存储"
       accent
       icon={<DiskIcon />}
       className="panel-storage"
@@ -140,27 +140,27 @@ export function StoragePanel({
             type="button"
             onClick={handleRefresh}
             disabled={refreshing}
-            title="Refresh storage"
-            aria-label="Refresh storage"
+            title="刷新存储"
+            aria-label="刷新存储"
             className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted transition-colors hover:bg-surface-hover disabled:opacity-50"
           >
             <RotateIcon className={`h-3 w-3 ${refreshing ? "animate-spin" : ""}`} />
-            <span>{refreshing ? "Refreshing…" : "Refresh"}</span>
+            <span>{refreshing ? "正在刷新…" : "刷新"}</span>
           </button>
           <SettingsButton
             active={showSettings}
             onClick={() => setShowSettings(!showSettings)}
             disabled={saving}
-            label="Storage"
+            label="存储"
           />
         </div>
       }
     >
       {showSettings ? (
         <div className="space-y-2">
-          <p className="mb-1 text-[10px] text-muted">Toggle devices on/off:</p>
+          <p className="mb-1 text-[10px] text-muted">选择要监控的设备：</p>
           {storage.length === 0 ? (
-            <p className="text-xs text-muted">No disks discovered</p>
+            <p className="text-xs text-muted">未发现磁盘</p>
           ) : (
             storage.map((disk) => {
               const isDisabled =
@@ -184,7 +184,7 @@ export function StoragePanel({
 
           <div className="border-t border-border pt-2">
             <label className="flex items-center justify-between text-xs text-muted">
-              <span>Auto-refresh</span>
+              <span>自动刷新</span>
               <Toggle
                 checked={!storagePollDisabled}
                 onChange={(on) => {
@@ -195,15 +195,15 @@ export function StoragePanel({
             </label>
             <p className="mt-0.5 text-[10px] text-muted">
               {storagePollDisabled
-                ? "Refresh manually using the button above"
-                : "Updates every few seconds"}
+                ? "使用上方按钮手动刷新"
+                : "每隔几秒自动更新"}
             </p>
           </div>
         </div>
       ) : (
         <>
           {visibleDisks.length === 0 ? (
-            <p className="text-xs text-muted">No mounted disks</p>
+            <p className="text-xs text-muted">没有已挂载的磁盘</p>
           ) : (
             <div className="space-y-3.5">
               {visibleDisks.map((disk) => {
@@ -223,15 +223,15 @@ export function StoragePanel({
                         {formatGb(disk.used)} / {formatGb(disk.total)}
                       </span>
                       <span className="font-tabular text-muted">
-                        {formatGb(disk.available)} free
+                        {formatGb(disk.available)} 可用
                       </span>
                     </div>
                     <div className="flex items-center justify-end gap-3 text-[10px]">
                       <span className="font-tabular text-muted">
-                        <span className="text-accent">↑</span> {formatBytesPerSec(disk.writeSpeed || 0)}
+                        <span className="text-muted">↑</span> {formatBytesPerSec(disk.writeSpeed || 0)}
                       </span>
                       <span className="font-tabular text-muted">
-                        <span className="text-accent">↓</span> {formatBytesPerSec(disk.readSpeed || 0)}
+                        <span className="text-muted">↓</span> {formatBytesPerSec(disk.readSpeed || 0)}
                       </span>
                     </div>
                   </div>

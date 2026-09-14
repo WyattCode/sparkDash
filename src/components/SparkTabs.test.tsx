@@ -42,7 +42,7 @@ describe("SparkTabs accessibility and scale", () => {
     const { container } = render(
       <SparkTabs sparks={sparks} activeId="m3" onSelect={() => {}} onAdd={() => {}} />
     );
-    const toggle = container.querySelector('button[aria-label="Select Spark"]') as HTMLButtonElement;
+    const toggle = container.querySelector('button[aria-label="选择 Spark"]') as HTMLButtonElement;
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
     act(() => toggle.click());
     expect(toggle.getAttribute("aria-expanded")).toBe("true");

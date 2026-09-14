@@ -300,7 +300,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
         if (cancelled) return;
         const found = sparks.find((s) => s.id === sparkId) || null;
         if (!found) {
-          setLoadError("Spark not found");
+          setLoadError("找不到节点");
           setSpark(null);
           return;
         }
@@ -317,7 +317,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
         if (fromQuery) setModelId(fromQuery);
       })
       .catch((err) => {
-        if (!cancelled) setLoadError(err?.message || "Failed to load Spark");
+        if (!cancelled) setLoadError(err?.message || "无法加载节点");
       });
     return () => {
       cancelled = true;
@@ -400,7 +400,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
     async (s: LocalStream) => {
       const ok = await copyText(buildTerminalPlainText(s));
       if (ok) flashCopied(s.streamId);
-      else setRunError("Could not copy to clipboard");
+      else setRunError("无法复制到剪贴板");
     },
     [flashCopied]
   );
@@ -419,7 +419,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
       })
     );
     if (ok) flashCopied("all");
-    else setRunError("Could not copy to clipboard");
+    else setRunError("无法复制到剪贴板");
   }, [spark, displayStreams, port, modelId, serverTps, runFinished, sessionAvgTps, flashCopied]);
 
   const applySession = useCallback((data: ShowcaseSessionState, full: boolean) => {
@@ -561,7 +561,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
     try {
       const trimmed = prompts.map((p) => p.trim()).filter(Boolean);
       if (trimmed.length < MIN_TERMINALS || trimmed.length > MAX_TERMINALS) {
-        throw new Error(`Use between ${MIN_TERMINALS} and ${MAX_TERMINALS} non-empty prompts`);
+        throw new Error(`请填写 ${MIN_TERMINALS} 到 ${MAX_TERMINALS} 条非空提示词`);
       }
       const started = await startShowcase(sparkId, {
         port,
@@ -684,7 +684,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
 
   const handleClearHistory = useCallback(async () => {
     if (running || starting) return;
-    if (!window.confirm("Clear all saved showcase history for this Spark?")) return;
+    if (!window.confirm("确认清除此节点保存的全部演示历史？")) return;
     try {
       await clearShowcaseHistory(sparkId);
       setHistory([]);
@@ -731,7 +731,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
     return (
       <div className="showcase-page">
         <div className="showcase-page__empty">
-          <h1>Showcase</h1>
+          <h1>演示</h1>
           <p>{loadError}</p>
         </div>
       </div>
@@ -742,7 +742,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
     return (
       <div className="showcase-page">
         <div className="showcase-page__empty">
-          <p>Loading…</p>
+          <p>正在加载…</p>
         </div>
       </div>
     );
@@ -770,16 +770,16 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
       {!barVisible ? (
         <div className="showcase-config-peek">
           <div className="showcase-config__title">
-            <a href="/" className="logo-pill showcase-brand" title="sparkDash home">
+            <a href="/" className="logo-pill showcase-brand" title="sparkDash 首页">
               <BoltIcon className="showcase-brand__bolt" />
               <span>
-                spark<span className="logo-pill-dash">Dash</span>
+                spark<span className="logo-pill-dash">控制台</span>
               </span>
             </a>
             <div className="showcase-config__subtitle">
               <span className="showcase-config__name">{spark.name}</span>
               <span className="showcase-config__meta">
-                <span className="showcase-config__meta-label">Prompt Showcase</span>
+                <span className="showcase-config__meta-label">提示词演示</span>
               </span>
             </div>
           </div>
@@ -788,12 +788,12 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
               type="button"
               className="showcase-btn showcase-btn--ghost showcase-config-peek__show"
               onClick={() => setBarVisible(true)}
-              title="Show controls"
+              title="显示控制项"
             >
-              Show controls
+              显示控制项
             </button>
             {(aggregateTps > 0 || totalTokens > 0) && (
-              <div className="showcase-config-peek__tps" title="Aggregate tokens per second across all terminals">
+              <div className="showcase-config-peek__tps" title="所有终端的总吞吐量">
                 <span className="showcase-config-peek__tps-value font-tabular">
                   {aggregateTps > 0 ? `${aggregateTps.toFixed(0)}` : "—"}
                 </span>
@@ -810,10 +810,10 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                 type="button"
                 className="showcase-btn showcase-btn--danger"
                 onClick={() => {
-                  if (window.confirm("Stop all showcase streams?")) void handleStop();
+                  if (window.confirm("确认停止全部演示流？")) void handleStop();
                 }}
               >
-                Stop
+                停止
               </button>
             )}
           </div>
@@ -822,23 +822,23 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
       <div className={`showcase-config${configOpen ? "" : " is-collapsed"}`}>
         <div className="showcase-config__bar">
           <div className="showcase-config__title">
-            <a href="/" className="logo-pill showcase-brand" title="sparkDash home">
+            <a href="/" className="logo-pill showcase-brand" title="sparkDash 首页">
               <BoltIcon className="showcase-brand__bolt" />
               <span>
-                spark<span className="logo-pill-dash">Dash</span>
+                spark<span className="logo-pill-dash">控制台</span>
               </span>
             </a>
             <div className="showcase-config__subtitle">
               <span className="showcase-config__name">{spark.name}</span>
               <span className="showcase-config__meta">
-                <span className="showcase-config__meta-label">Prompt Showcase</span>
+                <span className="showcase-config__meta-label">提示词演示</span>
               </span>
             </div>
           </div>
           <div className="showcase-config__controls">
             <fieldset className="showcase-config__lockgroup" disabled={controlsLocked}>
               <label className="showcase-field">
-                <span className="showcase-field__label">Port</span>
+                <span className="showcase-field__label">端口</span>
                 <select
                   value={port}
                   disabled={controlsLocked}
@@ -852,7 +852,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                 </select>
               </label>
               <label className="showcase-field">
-                <span className="showcase-field__label">Terminals</span>
+                <span className="showcase-field__label">终端数量</span>
                 <select
                   value={terminalCount}
                   disabled={controlsLocked}
@@ -869,7 +869,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                 className="showcase-field"
                 title={PROMPT_TYPES.find((t) => t.id === promptType)?.hint}
               >
-                <span className="showcase-field__label">Prompt type</span>
+                <span className="showcase-field__label">提示词类型</span>
                 <select
                   value={promptType}
                   disabled={controlsLocked}
@@ -885,7 +885,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                 </select>
               </label>
               <label className="showcase-field">
-                <span className="showcase-field__label">Max tokens</span>
+                <span className="showcase-field__label">最大 token 数</span>
                 <input
                   type="number"
                   min={64}
@@ -897,7 +897,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                 />
               </label>
               <label className="showcase-field">
-                <span className="showcase-field__label">Temp</span>
+                <span className="showcase-field__label">温度</span>
                 <input
                   type="number"
                   min={MIN_TEMPERATURE}
@@ -905,7 +905,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                   step={0.1}
                   value={temperature}
                   disabled={controlsLocked}
-                  title="Sampling temperature (0–2)"
+                  title="采样温度（0–2）"
                   onChange={(e) => {
                     const n = Number(e.target.value);
                     if (!Number.isFinite(n)) {
@@ -922,14 +922,14 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                 <span className="showcase-field__label showcase-field__label--spacer" aria-hidden="true">
                   &nbsp;
                 </span>
-                <label className="showcase-check" title="Enable model thinking / reasoning tokens">
+                <label className="showcase-check" title="启用模型思考／推理 token">
                   <input
                     type="checkbox"
                     checked={thinking}
                     disabled={controlsLocked}
                     onChange={(e) => setThinking(e.target.checked)}
                   />
-                  <span>Thinking</span>
+                  <span>思考</span>
                 </label>
               </div>
             </fieldset>
@@ -943,7 +943,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                   checked={configOpen}
                   onChange={(e) => setConfigOpen(e.target.checked)}
                 />
-                <span>Show prompts</span>
+                <span>显示提示词</span>
               </label>
             </div>
             <div className="showcase-field showcase-field--actions">
@@ -957,17 +957,17 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                   disabled={!canRun || monitoringOff || controlsLocked}
                   onClick={() => void handleRun()}
                 >
-                  {starting ? "Starting…" : "Run"}
+                  {starting ? "正在启动…" : "运行"}
                 </button>
                 {running && (
                   <button
                     type="button"
                     className="showcase-btn showcase-btn--danger"
                     onClick={() => {
-                      if (window.confirm("Stop all showcase streams?")) void handleStop();
+                      if (window.confirm("确认停止全部演示流？")) void handleStop();
                     }}
                   >
-                    Stop
+                    停止
                   </button>
                 )}
                 <button
@@ -975,25 +975,25 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                   className="showcase-btn showcase-btn--ghost"
                   disabled={!hasCopyable}
                   onClick={() => void handleCopyAll()}
-                  title="Copy all terminals as plain text"
+                  title="将所有终端复制为纯文本"
                 >
-                  {copiedId === "all" ? "Copied!" : "Copy all"}
+                  {copiedId === "all" ? "已复制！" : "全部复制"}
                 </button>
                 <button
                   type="button"
                   className={`showcase-btn showcase-btn--ghost${historyOpen ? " is-active" : ""}`}
                   onClick={() => setHistoryOpen((o) => !o)}
-                  title="Past showcase runs"
+                  title="历史演示记录"
                 >
-                  History{history.length > 0 ? ` (${history.length})` : ""}
+                  历史记录{history.length > 0 ? ` (${history.length})` : ""}
                 </button>
                 <button
                   type="button"
                   className="showcase-btn showcase-btn--ghost"
                   onClick={() => setBarVisible(false)}
-                  title="Hide controls"
+                  title="隐藏控制项"
                 >
-                  Hide
+                  隐藏
                 </button>
               </div>
             </div>
@@ -1003,7 +1003,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
         {historyOpen && (
           <div className="showcase-history">
             <div className="showcase-history__head">
-              <span className="showcase-history__title">Past runs</span>
+              <span className="showcase-history__title">历史记录</span>
               <div className="showcase-history__head-actions">
                 <button
                   type="button"
@@ -1011,7 +1011,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                   disabled={historyLoading}
                   onClick={() => void refreshHistory()}
                 >
-                  {historyLoading ? "Loading…" : "Refresh"}
+                  {historyLoading ? "正在加载…" : "刷新"}
                 </button>
                 <button
                   type="button"
@@ -1019,13 +1019,13 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                   disabled={!history.length || controlsLocked}
                   onClick={() => void handleClearHistory()}
                 >
-                  Clear
+                  清除
                 </button>
               </div>
             </div>
             {!history.length && !historyLoading ? (
               <p className="showcase-history__empty">
-                No saved runs yet. Finished showcases appear here automatically.
+                暂无已保存的运行记录，演示结束后将自动显示在此处。
               </p>
             ) : (
               <ul className="showcase-history__list">
@@ -1049,20 +1049,20 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                         className="showcase-history__main"
                         disabled={controlsLocked}
                         onClick={() => void handleOpenHistoryRun(row.sessionId)}
-                        title="View this run"
+                        title="查看此次运行"
                       >
                         <span className="showcase-history__when">{when}</span>
                         <span className="showcase-history__meta">
                           <span className={`showcase-history__status showcase-history__status--${row.status}`}>
-                            {row.status}
+                            {({running:'运行中',completed:'已完成',failed:'失败',cancelled:'已取消'} as Record<string,string>)[row.status]||row.status}
                           </span>
                           <span>· :{row.port}</span>
-                          <span>· {row.streamCount} term</span>
+                          <span>· {row.streamCount} 终端</span>
                           {row.promptType ? (
                             <span>· {row.promptType}</span>
                           ) : null}
                           {row.meanDecodeTps > 0 && (
-                            <span>· avg {row.meanDecodeTps.toFixed(0)} tok/s</span>
+                            <span>· 平均 {row.meanDecodeTps.toFixed(0)} tok/s</span>
                           )}
                           {row.totalTokens > 0 && (
                             <span>· {formatToks(row.totalTokens)} tok</span>
@@ -1079,9 +1079,9 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
                         className="showcase-btn showcase-btn--ghost showcase-history__reuse"
                         disabled={controlsLocked}
                         onClick={() => handleUseHistorySettings(row)}
-                        title="Load prompts & settings into the form (does not re-run)"
+                        title="将提示词和设置载入表单（不会重新运行）"
                       >
-                        Reuse
+                        复用
                       </button>
                     </li>
                   );
@@ -1095,7 +1095,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
           <div className="showcase-config__prompts">
             {prompts.map((p, i) => (
               <label key={i} className="showcase-prompt">
-                <span className="showcase-prompt__label">Prompt {i + 1}</span>
+                <span className="showcase-prompt__label">提示词 {i + 1}</span>
                 <textarea
                   value={p}
                   disabled={controlsLocked}
@@ -1113,7 +1113,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
         {(runError || monitoringOff) && (
           <p className="showcase-config__error">
             {monitoringOff
-              ? "LLM monitoring is off or this Spark is a worker — showcase unavailable."
+              ? "模型监控未开启，或此节点为工作节点，无法使用演示功能。"
               : runError}
           </p>
         )}
@@ -1122,22 +1122,22 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
 
       {modelId ? (
         <header className="showcase-model-header" title={modelId}>
-          <span className="showcase-model-header__label">Model</span>
+          <span className="showcase-model-header__label">模型</span>
           <h1 className="showcase-model-header__name">{modelId}</h1>
         </header>
       ) : null}
 
       {showMetricsStrip && (
         <div className="showcase-metrics" aria-live="polite">
-          <div className="showcase-metrics__hero" title="Sum of live decode tok/s across all terminals">
-            <span className="showcase-metrics__label">Aggregate</span>
+          <div className="showcase-metrics__hero" title="所有终端当前解码吞吐量之和（tok/s）">
+            <span className="showcase-metrics__label">合计</span>
             <span className="showcase-metrics__hero-value font-tabular">
               {aggregateTps > 0 ? aggregateTps.toFixed(0) : "—"}
               <span className="showcase-metrics__hero-unit">tok/s</span>
             </span>
             {aggregatePeakTps > 0 && (
                 <span className="showcase-metrics__sub">
-                  peak {aggregatePeakTps.toFixed(0)}
+                  峰值 {aggregatePeakTps.toFixed(0)}
                 </span>
               )}
           </div>
@@ -1148,14 +1148,14 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
               </span>
               <div
                 className="showcase-metrics__item"
-                title="Average decode tok/s per terminal for this session"
+                title="本次会话每个终端的平均解码吞吐量（tok/s）"
               >
-                <span className="showcase-metrics__label">Avg</span>
+                <span className="showcase-metrics__label">平均</span>
                 <span className="showcase-metrics__value font-tabular">
                   {sessionAvgTps.toFixed(0)}
                   <span className="showcase-metrics__unit"> tok/s</span>
                 </span>
-                <span className="showcase-metrics__sub">per stream</span>
+                <span className="showcase-metrics__sub">每条流</span>
               </div>
             </>
           )}
@@ -1172,7 +1172,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
             ·
           </span>
           <div className="showcase-metrics__item">
-            <span className="showcase-metrics__label">Server</span>
+            <span className="showcase-metrics__label">服务端</span>
             <span className="showcase-metrics__value font-tabular">
               {serverTps != null ? `${serverTps.toFixed(0)}` : "—"}
               {serverTps != null && (
@@ -1181,7 +1181,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
             </span>
             {serverTpsMax != null && serverTpsMax > 0 && (
                 <span className="showcase-metrics__sub">
-                  peak {serverTpsMax.toFixed(0)}
+                  峰值 {serverTpsMax.toFixed(0)}
                 </span>
               )}
           </div>
@@ -1189,7 +1189,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
             ·
           </span>
           <div className="showcase-metrics__item">
-            <span className="showcase-metrics__label">Streams</span>
+            <span className="showcase-metrics__label">并行流</span>
             <span className="showcase-metrics__value font-tabular">
               {
                 displayStreams.filter(
@@ -1231,10 +1231,10 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
 
       {sessionId && sessionStatus && sessionStatus !== "running" && (
         <p className="showcase-page__footer-note">
-          {viewingHistory ? "History · " : "Session "}
+          {viewingHistory ? "历史记录 ·" : "会话"}
           {sessionStatus}
           {sessionId ? ` · ${sessionId.slice(0, 8)}…` : ""}
-          {viewingHistory ? " · read-only" : ""}
+          {viewingHistory ? "· 只读" : ""}
         </p>
       )}
     </div>

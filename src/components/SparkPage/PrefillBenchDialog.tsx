@@ -60,13 +60,13 @@ function formatDuration(ms: number): string {
 function statusLabel(status: PrefillBenchJob["status"]): string {
   switch (status) {
     case "running":
-      return "Running";
+      return "运行中";
     case "completed":
-      return "Completed";
+      return "已完成";
     case "failed":
-      return "Failed";
+      return "失败";
     case "cancelled":
-      return "Cancelled";
+      return "已取消";
     default:
       return status;
   }
@@ -122,7 +122,7 @@ function ResultRow({ r }: { r: PrefillBenchJob["results"][number] }) {
 
       <div className="bench-result-row__speeds">
         <div className="bench-result-row__metric">
-          <span className="bench-result-row__label">Prefill</span>
+          <span className="bench-result-row__label">预填充</span>
           <span className="bench-result-row__value bench-result-row__value--accent">
             {r.prefillTps.toFixed(1)}
             <span className="bench-result-row__unit">tok/s</span>
@@ -205,7 +205,7 @@ export function PrefillBenchDialog({
                 }
                 setError(
                   err.message === "Benchmark not found"
-                    ? "Benchmark interrupted — server restarted during the run"
+                    ? "基准测试中断，运行期间服务已重启"
                     : err.message
                 );
                 stopPoll();
@@ -213,7 +213,7 @@ export function PrefillBenchDialog({
               .catch(() => {
                 setError(
                   err.message === "Benchmark not found"
-                    ? "Benchmark interrupted — server restarted during the run"
+                    ? "基准测试中断，运行期间服务已重启"
                     : err.message
                 );
                 stopPoll();
@@ -294,7 +294,7 @@ export function PrefillBenchDialog({
   const handleStart = async () => {
     const sizes = selected.filter(sizeFits);
     if (sizes.length === 0) {
-      setError("Select at least one context size that fits this model");
+      setError("请至少选择一种模型支持的上下文长度");
       return;
     }
     setStarting(true);
@@ -355,7 +355,7 @@ export function PrefillBenchDialog({
       if (copyResetRef.current != null) clearTimeout(copyResetRef.current);
       copyResetRef.current = setTimeout(() => setCopied(false), 1800);
     } catch {
-      setError("Could not copy results to clipboard");
+      setError("无法将结果复制到剪贴板");
     }
   };
 
@@ -394,7 +394,7 @@ export function PrefillBenchDialog({
       <button
         type="button"
         className="bench-overlay__scrim"
-        aria-label="Close dialog"
+        aria-label="关闭对话框"
         onClick={() => {
           if (!isRunning) onClose();
         }}
@@ -409,7 +409,7 @@ export function PrefillBenchDialog({
         <header className="bench-sheet__header">
           <div className="bench-sheet__header-text">
             <h2 id="prefill-bench-title" className="bench-sheet__title">
-              Prefill benchmark
+              预填充基准测试
             </h2>
             <p className="bench-sheet__subtitle">
               {remoteTarget
@@ -422,7 +422,7 @@ export function PrefillBenchDialog({
             type="button"
             className="bench-sheet__close"
             onClick={onClose}
-            aria-label="Close"
+            aria-label="关闭"
           >
             ✕
           </button>
@@ -430,17 +430,17 @@ export function PrefillBenchDialog({
 
         <div className="bench-sheet__body">
           {loadingLast && !job && (
-            <p className="bench-sheet__hint">Loading last results…</p>
+            <p className="bench-sheet__hint">正在加载上次结果…</p>
           )}
 
           {showConfig && (
             <section className="bench-sheet__section">
               <div className="bench-field">
                 <div className="bench-field__head">
-                  <h3 className="bench-sheet__section-title">Context size</h3>
+                  <h3 className="bench-sheet__section-title">上下文长度</h3>
                   <p className="bench-sheet__hint">{ctxHint}</p>
                 </div>
-                <div className="bench-conc-grid" role="group" aria-label="Context sizes">
+                <div className="bench-conc-grid" role="group" aria-label="上下文长度组">
                   {PREFILL_CONTEXT_SIZES.map((n: number) => {
                     const on = selected.includes(n);
                     const fits = sizeFits(n);
@@ -473,7 +473,7 @@ export function PrefillBenchDialog({
               <div className="bench-progress">
                 <div className="bench-progress__row">
                   <span className="bench-progress__status">
-                    Running
+                    运行中
                     {job.progress.currentContext != null
                       ? ` · ${formatContextSize(job.progress.currentContext)}`
                       : ""}
@@ -495,7 +495,7 @@ export function PrefillBenchDialog({
               </div>
               {job.results.length > 0 && (
                 <div className="bench-results">
-                  <div className="bench-results__caption">Completed sizes</div>
+                  <div className="bench-results__caption">已完成的上下文长度</div>
                   {job.results.map((r) => (
                     <ResultRow key={r.targetTokens} r={r} />
                   ))}
@@ -521,9 +521,9 @@ export function PrefillBenchDialog({
               {job.results.length > 0 && (
                 <div className="bench-results bench-results--table">
                   <div className="bench-results__head" aria-hidden="true">
-                    <span>Context</span>
+                    <span>上下文</span>
                     <span className="bench-results__head-speeds">
-                      <span>Prefill</span>
+                      <span>预填充</span>
                       <span>TTFT</span>
                     </span>
                   </div>
@@ -535,9 +535,8 @@ export function PrefillBenchDialog({
 
               {job.results.length > 0 && (
                 <p className="bench-legend">
-                  <strong>Prefill</strong> — prompt tokens ÷ time to first token.{" "}
-                  <strong>TTFT</strong> — request start to first streamed token. Each size
-                  uses a unique prefix so prefix-cache does not inflate later sizes.
+                  <strong>预填充</strong> — 提示词 Token 数 ÷ 首字延迟。{" "}
+                  <strong>TTFT</strong> — 请求开始到首个流式 Token 的时间。每种长度使用独立前缀，避免前缀缓存影响后续结果。
                 </p>
               )}
             </section>
@@ -551,7 +550,7 @@ export function PrefillBenchDialog({
               className="bench-btn bench-btn--ghost"
               onClick={() => void handleCancel()}
             >
-              Cancel
+              取消
             </button>
           ) : job ? (
             <>
@@ -560,9 +559,9 @@ export function PrefillBenchDialog({
                   type="button"
                   className="bench-btn bench-btn--ghost"
                   onClick={() => void handleClear()}
-                  title="Clear saved results for this port"
+                  title="清除此端口已保存的结果"
                 >
-                  Clear
+                  清除
                 </button>
               )}
               {job.results.length > 0 && (
@@ -570,22 +569,22 @@ export function PrefillBenchDialog({
                   type="button"
                   className="bench-btn bench-btn--ghost"
                   onClick={() => void handleCopyResults()}
-                  title="Copy a plain-text summary to the clipboard"
+                  title="将纯文本摘要复制到剪贴板"
                 >
-                  {copied ? "Copied!" : "Copy results"}
+                  {copied ? "已复制！" : "复制结果"}
                 </button>
               )}
               <button type="button" className="bench-btn bench-btn--ghost" onClick={handleNewRun}>
-                New run
+                新建运行
               </button>
               <button type="button" className="bench-btn bench-btn--primary" onClick={onClose}>
-                Done
+                完成
               </button>
             </>
           ) : (
             <>
               <button type="button" className="bench-btn bench-btn--ghost" onClick={onClose}>
-                Close
+                关闭
               </button>
               <button
                 type="button"
@@ -593,7 +592,7 @@ export function PrefillBenchDialog({
                 onClick={() => void handleStart()}
                 disabled={starting || selected.filter(sizeFits).length === 0}
               >
-                {starting ? "Starting…" : "Run benchmark"}
+                {starting ? "正在启动…" : "运行基准测试"}
               </button>
             </>
           )}

@@ -65,6 +65,10 @@ describe("useSnapshot connection lifecycle", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
   });
+  it('connects safely when token storage is denied', () => {
+    vi.stubGlobal('localStorage',{getItem:()=>{throw new DOMException('Denied','SecurityError');}});
+    expect(()=>render(<Probe/>)).not.toThrow();expect(MockSocket.instances[0].url).toBe('ws://localhost:5555/ws');
+  });
 
   it("stays disconnected until a valid snapshot, then recovers after disconnect and malformed data", async () => {
     render(<Probe />);
@@ -83,6 +87,13 @@ describe("useSnapshot connection lifecycle", () => {
     expect(readProbe()).toMatchObject({ connected: true, count: 1, error: null, last: 50_000 });
     expect(getMetricHistorySamples("alpha", "gpu.usage")[0]).toEqual({ at: 50_000, value: 42 });
 
+    const invalid = {...makeSpark('bad'),telemetry:{}};
+    act(() => socket.emit({type:'snapshot',generatedAt:50_001,sparks:[invalid]}));
+    await flush();
+    expect(readProbe()).toMatchObject({count:1,last:50_000});
+    expect(readProbe().error).toContain('无效');
+    expect(getMetricHistorySamples('bad','gpu.usage')).toEqual([]);
+
     act(() => socket.close());
     await flush();
     expect(readProbe().connected).toBe(false);
@@ -93,7 +104,7 @@ describe("useSnapshot connection lifecycle", () => {
     act(() => next.open());
     act(() => next.emit("not-json"));
     await flush();
-    expect(readProbe().error).toContain("malformed");
+    expect(readProbe().error).toContain("格式错误");
     expect(readProbe().connected).toBe(false);
 
     act(() => next.emit({ type: "snapshot", generatedAt: 51_000, refreshInterval: 2000, sparks: [makeSpark("alpha")] }));

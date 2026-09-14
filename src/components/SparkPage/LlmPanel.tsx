@@ -27,21 +27,21 @@ interface LlmPanelProps {
 
 const VLLM_METRIC_INFO = {
   kvCache:
-    "Fraction of the engine’s KV cache memory currently in use (0–100%). High values (≥80%) mean little room for new or long contexts and often lead to queuing or preemptions.",
+    "引擎当前 KV 缓存占用比例（0–100%）。较高占用（≥80%）意味着新请求或长上下文余量较少，可能出现排队或抢占。",
   requests:
-    "Run = requests actively generating on the GPU. Wait = accepted but not yet scheduled (capacity or constraints). Growing wait with high KV cache usually means the server is overloaded.",
+    "运行：正在 GPU 上生成的请求。排队：已接受但尚未调度的请求。排队增长且 KV 缓存占用较高时，通常表示容量紧张。",
   ttftP95:
-    "95th percentile time-to-first-token from the engine’s request history: how long “slow” requests wait until the first output token. Spikes mean queueing, long prefills, or cold paths—not average decode speed.",
+    "引擎请求历史中的首 Token 延迟 P95。上升可能来自排队、长预填充或冷启动路径，不等于平均解码速度下降。",
   preempts:
-    "Cumulative times the engine paused a running request to free KV cache for others. Rising under load signals memory pressure; zero is normal when the server is comfortable.",
+    "引擎为释放 KV 缓存而暂停运行请求的累计次数。负载期间增长提示内存压力；零表示尚未观测到此类抢占。",
   prefixCache:
-    "Lifetime fraction of prefix-cache lookups that hit (hits ÷ queries). Higher means more prompt reuse and less prefill work; — when the series is missing or unused.",
+    "启动以来前缀缓存命中数 / 查询数。较高值表示提示词复用较多、预填充计算较少；缺少指标或尚未使用时不提供数值。",
   e2eP95:
-    "95th percentile end-to-end request latency from the engine’s request history: arrival until the request finishes. Includes queue wait, prefill, and decode—not just token generation speed.",
+    "引擎请求历史中的端到端延迟 P95，从请求到达到完成，包含排队、预填充和解码，不仅是 Token 生成时间。",
   itlP95:
-    "95th percentile inter-token latency (time between successive output tokens) from the engine’s request history. Spikes mean decode stalls or contention; lower is smoother streaming.",
+    "引擎历史中相邻输出 Token 间隔的 P95。上升可能表示解码停顿或资源争用，较低值通常表示流式输出更平滑。",
   mtpAccept:
-    "Lifetime speculative / MTP acceptance rate (accepted draft tokens ÷ drafted tokens). Higher means speculative decoding is paying off; — when speculation is off or unused.",
+    "启动以来推测解码 / MTP 接受的草稿 Token 数占草稿总数的比例。未启用或尚未使用时不提供数值。",
 } as const;
 
 const LAUNCHER_BTN =
@@ -131,9 +131,9 @@ function LlmLaunchers({
           type="button"
           onClick={onDecode}
           className={`${LAUNCHER_BTN} min-w-0 flex-1`}
-          title="Runs against this Spark’s LLM. Remote units use LAN HTTP, or an SSH tunnel to loopback if the server only listens on 127.0.0.1."
+          title="测试此节点的模型服务；远程节点使用局域网 HTTP，服务仅监听 127.0.0.1 时使用 SSH 隧道。"
         >
-          Run decode benchmark
+          运行解码基准测试
         </button>
         <button
           type="button"
@@ -147,9 +147,9 @@ function LlmLaunchers({
               : "border-border bg-surface-elevated text-muted hover:border-accent hover:text-accent"
           }`}
           aria-expanded={remoteOpen}
-          title="On-demand bench against a typed host (HTTPS Tailscale, LAN IP, …). Not probed until you run."
+          title="对指定主机执行按需测试（HTTPS Tailscale、局域网 IP 等）；点击运行前不会探测。"
         >
-          Remote
+          远程
         </button>
       </div>
       <div className="flex gap-2">
@@ -157,9 +157,9 @@ function LlmLaunchers({
           type="button"
           onClick={onPrefill}
           className={`${LAUNCHER_BTN} min-w-0 flex-1`}
-          title="Runs against this Spark’s LLM. Remote units use LAN HTTP, or an SSH tunnel to loopback if the server only listens on 127.0.0.1."
+          title="测试此节点的模型服务；远程节点使用局域网 HTTP，服务仅监听 127.0.0.1 时使用 SSH 隧道。"
         >
-          Run prefill benchmark
+          运行预填充基准测试
         </button>
         <button
           type="button"
@@ -173,18 +173,18 @@ function LlmLaunchers({
               : "border-border bg-surface-elevated text-muted hover:border-accent hover:text-accent"
           }`}
           aria-expanded={remoteOpen}
-          title="On-demand bench against a typed host (HTTPS Tailscale, LAN IP, …). Not probed until you run."
+          title="对指定主机执行按需测试（HTTPS Tailscale、局域网 IP 等）；点击运行前不会探测。"
         >
-          Remote
+          远程
         </button>
       </div>
       {remoteOpen && (
         <div className="space-y-2 rounded border border-border bg-surface-elevated p-2">
           <p className="text-[10px] leading-snug text-muted">
-            On-demand endpoint. Paste a URL or type host + port — nothing is probed until you run.
+            按需测试目标：粘贴 URL 或填写主机与端口，点击运行前不会探测。
           </p>
           <label className="block space-y-1">
-            <span className="text-[10px] uppercase tracking-wide text-muted">Host</span>
+            <span className="text-[10px] uppercase tracking-wide text-muted">主机</span>
             <input
               type="text"
               value={hostDraft}
@@ -199,7 +199,7 @@ function LlmLaunchers({
           </label>
           <div className="flex items-end gap-2">
             <label className="min-w-0 flex-1 space-y-1">
-              <span className="text-[10px] uppercase tracking-wide text-muted">Port</span>
+              <span className="text-[10px] uppercase tracking-wide text-muted">端口</span>
               <input
                 type="number"
                 min={1}
@@ -232,14 +232,14 @@ function LlmLaunchers({
               onClick={() => launchRemote("decode")}
               className={`${LAUNCHER_BTN} flex-1`}
             >
-              Decode
+              解码
             </button>
             <button
               type="button"
               onClick={() => launchRemote("prefill")}
               className={`${LAUNCHER_BTN} flex-1`}
             >
-              Prefill
+              预填充
             </button>
           </div>
         </div>
@@ -259,7 +259,7 @@ function LlmLaunchers({
         }}
         className={`${LAUNCHER_BTN} w-full`}
       >
-        Showcase
+        演示
       </button>
     </div>
   );
@@ -267,7 +267,7 @@ function LlmLaunchers({
 
 /** Backend badge — neutral surfaces with a single accent dot. No blue/purple. */
 function BackendBadge({ backend }: { backend: string | null }) {
-  if (!backend) return <span className="text-xs text-muted">No backend</span>;
+  if (!backend) return <span className="text-xs text-muted">无后端</span>;
 
   const labels: Record<string, string> = {
     vllm: "vLLM",
@@ -280,13 +280,18 @@ function BackendBadge({ backend }: { backend: string | null }) {
 
   return (
     <span className="llm-badge">
-      <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+      <span className="h-1.5 w-1.5 rounded-full bg-data" />
       {labels[backend] || backend}
     </span>
   );
 }
 
 /** Exposure / auth posture from the unauthenticated probe (issue #17). */
+function postureLabel(label: string): string {
+  const labels: Record<string,string> = {'API key · Local':'API 密钥 · 本机','Auth required':'需要鉴权','Local':'本机','Open · Local':'开放 · 本机','API key':'API 密钥'};
+  return labels[label] ?? label;
+}
+
 function PostureBadge({
   posture,
 }: {
@@ -298,7 +303,7 @@ function PostureBadge({
       title={posture.detail}
     >
       <span className="llm-posture__dot" />
-      {posture.label}
+      {postureLabel(posture.label)}
     </span>
   );
 }
@@ -471,7 +476,7 @@ export function LlmPanel({
 
   const handleSaveSettings = async () => {
     if (parsedPort === null) {
-      setSaveError("Port must be an integer 1–65535");
+      setSaveError("端口必须是 1–65535 之间的整数");
       return;
     }
     if (!settingsDirty) {
@@ -485,7 +490,7 @@ export function LlmPanel({
         const currentPorts =
           Array.isArray(llmPorts) && llmPorts.length > 0 ? llmPorts : [llmPort];
         if (currentPorts.includes(parsedPort) && parsedPort !== llmPort) {
-          setSaveError(`Port ${parsedPort} is already configured`);
+          setSaveError(`端口 ${parsedPort} 已配置`);
           setSaving(false);
           return;
         }
@@ -507,7 +512,7 @@ export function LlmPanel({
       setClearApiKey(false);
       setShowSettings(false);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : "Failed to save LLM settings");
+      setSaveError(err instanceof Error ? err.message : "无法保存模型设置");
     } finally {
       setSaving(false);
     }
@@ -529,12 +534,12 @@ export function LlmPanel({
               className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-danger transition-colors hover:bg-danger/10"
             >
               <span aria-hidden>×</span>
-              <span>Remove</span>
+              <span>移除</span>
             </button>
           )}
           <button
             type="button"
-            title={showSettings ? "Done" : "LLM settings"}
+            title={showSettings ? "完成" : "LLM 设置"}
             onClick={() => {
               if (showSettings) {
                 setPortDraft(String(llmPort));
@@ -550,7 +555,7 @@ export function LlmPanel({
             }`}
           >
             <GearIcon />
-            <span>{showSettings ? "Done" : "Settings"}</span>
+            <span>{showSettings ? "完成" : "设置"}</span>
           </button>
         </div>
       }
@@ -558,10 +563,10 @@ export function LlmPanel({
       {showSettings ? (
         <div className="space-y-3">
           <p className="text-[10px] text-muted">
-            HTTP port of the LLM server on this Spark (vLLM / llama.cpp / sglang / ds4 / EXL3 / OpenAI-compatible gateway).
+            此节点模型服务的 HTTP 端口（vLLM / llama.cpp / sglang / ds4 / EXL3 / OpenAI 兼容网关）。
           </p>
           <label className="block space-y-1">
-            <span className="text-xs text-muted">Port</span>
+            <span className="text-xs text-muted">端口</span>
             <input
               type="number"
               min={1}
@@ -582,14 +587,14 @@ export function LlmPanel({
             />
           </label>
           <label className="block space-y-1">
-            <span className="text-xs text-muted">API key (optional)</span>
+            <span className="text-xs text-muted">API 密钥（可选）</span>
             <input
               type="password"
               autoComplete="new-password"
               spellCheck={false}
               value={apiKeyDraft}
               disabled={clearApiKey}
-              placeholder={hasApiKey && !clearApiKey ? "•••••••• (saved — leave blank to keep)" : "Bearer token if required"}
+              placeholder={hasApiKey && !clearApiKey ? "••••••••（已保存，留空保留）" : "如有需要，请输入 Bearer 令牌"}
               onChange={(e) => {
                 setApiKeyDraft(e.target.value);
                 setClearApiKey(false);
@@ -616,11 +621,11 @@ export function LlmPanel({
                 }}
                 className="h-3.5 w-3.5 accent-[var(--color-accent)]"
               />
-              Clear saved API key
+              清除已保存的 API 密钥
             </label>
           )}
           {portInvalid && (
-            <p className="text-[10px] text-danger">Enter an integer between 1 and 65535</p>
+            <p className="text-[10px] text-danger">请输入 1 到 65535 之间的整数</p>
           )}
           {saveError && <p className="text-[10px] text-danger">{saveError}</p>}
           <div className="flex items-center justify-end gap-2">
@@ -636,7 +641,7 @@ export function LlmPanel({
               disabled={saving}
               className="rounded border border-border px-2 py-1 text-[10px] text-muted hover:bg-surface-hover disabled:opacity-50"
             >
-              Cancel
+              取消
             </button>
             <button
               type="button"
@@ -644,7 +649,7 @@ export function LlmPanel({
               disabled={saving || portInvalid || !settingsDirty}
               className="rounded bg-accent px-2 py-1 text-[10px] font-medium text-white hover:bg-accent-hover disabled:opacity-50"
             >
-              {saving ? "Saving…" : "Save"}
+              {saving ? "正在保存…" : "保存"}
             </button>
           </div>
         </div>
@@ -658,8 +663,8 @@ export function LlmPanel({
             )}
             <p className="text-xs text-muted">
               {llm?.posture?.auth === "protected"
-                ? `${llm.posture.label} on :${llmPort}`
-                : `No model loaded on :${llmPort}`}
+                ? `${postureLabel(llm.posture.label)} · 端口 ${llmPort}`
+                : `端口 ${llmPort} 未加载模型`}
             </p>
           </div>
           <LlmLaunchers
@@ -697,16 +702,16 @@ export function LlmPanel({
           )}
 
           <div className="flex items-center justify-between">
-            <span className="text-xs text-muted">Generation tok/s</span>
+            <span className="text-xs text-muted">生成 tok/s</span>
             <div className="flex items-center gap-2">
-              <Sparkline data={genHistory} color="var(--color-accent)" height={24} />
+              <Sparkline data={genHistory} color="var(--color-data)" height={24} />
               <div className="text-right">
-                <div className="font-tabular text-sm font-semibold text-accent">
+                <div className="font-tabular text-sm font-semibold text-text-strong">
                   {generationTps.toFixed(1)}
                 </div>
                 {genAvg != null && (
                   <div className="font-tabular text-[9px] text-muted">
-                    avg {genAvg >= 100 ? genAvg.toFixed(0) : genAvg.toFixed(1)}
+                    平均 {genAvg >= 100 ? genAvg.toFixed(0) : genAvg.toFixed(1)}
                   </div>
                 )}
               </div>
@@ -714,9 +719,9 @@ export function LlmPanel({
           </div>
           <div
             className="flex items-center justify-between"
-            title="Tokens/sec while the engine is reading the prompt and building KV cache — before the first output token. Opening a saved chat in the UI does not hit the GPU; send (or regenerate) so the history is sent as the prompt. Prefix-cache hits do little compute, so this can stay ~0. Long cold prefills show here until decode starts."
+            title="首个输出 Token 之前，模型读取提示词并建立 KV 缓存的吞吐量。仅打开历史聊天不会触发 GPU 计算；发送或重新生成才会提交提示词。前缀缓存命中时计算较少，数值可能接近零；较长的冷预填充会持续显示，直到开始解码。"
           >
-            <span className="text-xs text-muted">Prefill tok/s</span>
+            <span className="text-xs text-muted">预填充 tok/s</span>
             <div className="flex items-center gap-2">
               <Sparkline data={prefillHistory} color="var(--color-text)" height={24} />
               <div className="text-right">
@@ -725,7 +730,7 @@ export function LlmPanel({
                 </div>
                 {prefillAvg != null && (
                   <div className="font-tabular text-[9px] text-muted">
-                    avg {prefillAvg >= 100 ? prefillAvg.toFixed(0) : prefillAvg.toFixed(1)}
+                    平均 {prefillAvg >= 100 ? prefillAvg.toFixed(0) : prefillAvg.toFixed(1)}
                   </div>
                 )}
               </div>
@@ -735,9 +740,9 @@ export function LlmPanel({
             <>
               <div
                 className="flex items-center justify-between"
-                title="Prefill tokens served from prefix cache (little GPU work). High values mean prompt reuse, not a faster cold prefill."
+                title="来自前缀缓存的预填充 Token，GPU 计算较少；较高数值代表提示词复用，不代表冷预填充更快。"
               >
-                <span className="text-xs text-muted">Cached prefill tok/s</span>
+                <span className="text-xs text-muted">缓存预填充 tok/s</span>
                 <div className="flex items-center gap-2">
                   <Sparkline data={cachedPrefillHistory} color="var(--color-muted)" height={24} />
                   <div className="text-right">
@@ -746,7 +751,7 @@ export function LlmPanel({
                     </div>
                     {cachedPrefillAvg != null && (
                       <div className="font-tabular text-[9px] text-muted">
-                        avg {cachedPrefillAvg >= 100 ? cachedPrefillAvg.toFixed(0) : cachedPrefillAvg.toFixed(1)}
+                        平均 {cachedPrefillAvg >= 100 ? cachedPrefillAvg.toFixed(0) : cachedPrefillAvg.toFixed(1)}
                       </div>
                     )}
                   </div>
@@ -754,9 +759,9 @@ export function LlmPanel({
               </div>
               <div
                 className="flex items-center justify-between"
-                title="Uncached (computed) prefill — tokens that actually build KV cache on the GPU."
+                title="未缓存预填充：实际在 GPU 上计算并建立 KV 缓存的 Token。"
               >
-                <span className="text-xs text-muted">Uncached prefill tok/s</span>
+                <span className="text-xs text-muted">未缓存预填充 tok/s</span>
                 <div className="flex items-center gap-2">
                   <Sparkline data={uncachedPrefillHistory} color="var(--color-text)" height={24} />
                   <div className="text-right">
@@ -765,7 +770,7 @@ export function LlmPanel({
                     </div>
                     {uncachedPrefillAvg != null && (
                       <div className="font-tabular text-[9px] text-muted">
-                        avg {uncachedPrefillAvg >= 100 ? uncachedPrefillAvg.toFixed(0) : uncachedPrefillAvg.toFixed(1)}
+                        平均 {uncachedPrefillAvg >= 100 ? uncachedPrefillAvg.toFixed(0) : uncachedPrefillAvg.toFixed(1)}
                       </div>
                     )}
                   </div>
@@ -779,7 +784,7 @@ export function LlmPanel({
 
           <div className="grid grid-cols-4 gap-2 border-t border-border pt-3">
             <div className="space-y-0.5">
-              <div className="text-[10px] uppercase tracking-wide text-muted">Slots</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted">槽位</div>
               <div className="font-tabular text-sm text-text">
                 {(llm?.slotsTotal ?? 0) > 0
                   ? `${llm?.slotsActive ?? 0} / ${llm?.slotsTotal ?? 0}`
@@ -789,14 +794,14 @@ export function LlmPanel({
               </div>
             </div>
             <div className="space-y-0.5">
-              <div className="text-[10px] uppercase tracking-wide text-muted">Context</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted">上下文</div>
               <div className="font-tabular text-sm text-text">
                 {llm?.contextLength ? llm.contextLength.toLocaleString() : "—"}
               </div>
             </div>
             <div className="space-y-0.5">
               <div className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted">
-                <span>Engine</span>
+                <span>引擎</span>
                 <button
                   type="button"
                   onClick={() => {
@@ -808,7 +813,7 @@ export function LlmPanel({
                   onMouseEnter={clearEngineInfoTimer}
                   onMouseLeave={startEngineInfoTimer}
                   className="relative cursor-pointer opacity-60 hover:opacity-100"
-                  aria-label="Engine state info"
+                  aria-label="引擎状态说明"
                 >
                   <svg
                     width="10"
@@ -830,7 +835,7 @@ export function LlmPanel({
                       onMouseLeave={startEngineInfoTimer}
                       className="absolute left-0 top-full z-10 mt-1 w-56 rounded-md border border-border bg-surface-elevated px-3 py-2 text-left text-[11px] font-normal normal-case text-text shadow-lg"
                     >
-                      Active = processing or ready for requests. Sleeping = idle, GPU memory freed until next request.
+                      活跃：正在处理或可接受请求。休眠：当前空闲，GPU 内存已释放，等待下次请求。
                     </div>
                   )}
                 </button>
@@ -838,13 +843,13 @@ export function LlmPanel({
               <div className="font-tabular text-sm text-text">
                 {llm?.gpuMemoryUtilization != null
                   ? llm.gpuMemoryUtilization === 0
-                    ? "Sleeping"
-                    : "Active"
+                    ? "休眠"
+                    : "活跃"
                   : "—"}
               </div>
             </div>
             <div className="space-y-0.5">
-              <div className="text-[10px] uppercase tracking-wide text-muted">Total Generated</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted">累计生成</div>
               <div className="font-tabular text-sm text-text">
                 {llm && llm.totalOutputTokens > 0
                   ? llm.totalOutputTokens.toLocaleString()
@@ -858,7 +863,7 @@ export function LlmPanel({
               <div className="space-y-0.5">
                 <MetricInfoTip
                   id="kvCache"
-                  label="KV Cache"
+                  label="KV 缓存"
                   text={VLLM_METRIC_INFO.kvCache}
                   openId={metricInfoId}
                   setOpenId={setMetricInfoId}
@@ -882,7 +887,7 @@ export function LlmPanel({
               <div className="space-y-0.5">
                 <MetricInfoTip
                   id="requests"
-                  label="Requests"
+                  label="请求"
                   text={VLLM_METRIC_INFO.requests}
                   openId={metricInfoId}
                   setOpenId={setMetricInfoId}
@@ -901,7 +906,7 @@ export function LlmPanel({
               <div className="space-y-0.5">
                 <MetricInfoTip
                   id="ttftP95"
-                  label="TTFT p95"
+                  label="首字延迟 P95"
                   text={VLLM_METRIC_INFO.ttftP95}
                   openId={metricInfoId}
                   setOpenId={setMetricInfoId}
@@ -913,7 +918,7 @@ export function LlmPanel({
               <div className="space-y-0.5">
                 <MetricInfoTip
                   id="preempts"
-                  label="Preempts"
+                  label="抢占次数"
                   text={VLLM_METRIC_INFO.preempts}
                   openId={metricInfoId}
                   setOpenId={setMetricInfoId}
@@ -933,7 +938,7 @@ export function LlmPanel({
               <div className="space-y-0.5">
                 <MetricInfoTip
                   id="prefixCache"
-                  label="Prefix Cache"
+                  label="前缀缓存"
                   text={VLLM_METRIC_INFO.prefixCache}
                   openId={metricInfoId}
                   setOpenId={setMetricInfoId}
@@ -960,7 +965,7 @@ export function LlmPanel({
               <div className="space-y-0.5">
                 <MetricInfoTip
                   id="itlP95"
-                  label="ITL p95"
+                  label="字间延迟 P95"
                   text={VLLM_METRIC_INFO.itlP95}
                   openId={metricInfoId}
                   setOpenId={setMetricInfoId}
@@ -972,7 +977,7 @@ export function LlmPanel({
               <div className="space-y-0.5">
                 <MetricInfoTip
                   id="mtpAccept"
-                  label="MTP Accept"
+                  label="MTP 接受率"
                   text={VLLM_METRIC_INFO.mtpAccept}
                   openId={metricInfoId}
                   setOpenId={setMetricInfoId}

@@ -29,26 +29,26 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
       className="spark-header panel flex flex-wrap items-center gap-x-4 gap-y-2"
       style={{ padding: "var(--density-panel-pad)", ...(online ? {} : { opacity: 0.6 }) }}
     >
-      <div className="flex items-center gap-2.5">
+      <div className="flex min-w-0 max-w-full items-center gap-2.5">
         <span
           className={`h-2 w-2 shrink-0 rounded-full ${online ? "bg-success dot-glow-success" : "bg-danger"}`}
-          title={online ? "Online" : "Offline"}
+          title={online ? "在线" : "离线"}
         />
         <div className="min-w-0">
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate text-base font-semibold text-text-strong">{spark.name}</h2>
             {(() => {
               const role = resolveSparkRole(spark);
               const text =
-                role === "head" ? "Head" : role === "worker" ? "Worker" : "Standalone";
+                role === "head" ? "主节点" : role === "worker" ? "工作节点" : "独立节点";
               const title =
                 role === "head"
-                  ? "Cluster head — local LLM API"
+                  ? "集群主节点 · 本机模型 API"
                   : role === "worker"
-                    ? "Distributed LLM worker — no local model; LLM card is hidden"
+                    ? "分布式工作节点 · 不探测本机模型 API"
                     : spark.llmMonitoring === false
-                      ? "Standalone — LLM monitoring off"
-                      : "Standalone — local LLM API";
+                      ? "独立节点 · 模型监控已关闭"
+                      : "独立节点 · 本机模型 API";
               // Manual override first, then derived head-model mirror.
               const workerLabel =
                 role === "worker"
@@ -57,14 +57,14 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
               return (
                 <>
                   <span
-                    className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent"
+                    className="node-identity-tag shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium"
                     title={title}
                   >
                     {text}
                   </span>
                   {workerLabel && (
                     <span
-                      className="max-w-[14rem] truncate rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium text-accent"
+                      className="metadata-tag max-w-[14rem] truncate rounded px-1.5 py-0.5 text-[10px] font-medium"
                       title={workerLabel}
                     >
                       {workerLabel}
@@ -75,7 +75,7 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
             })()}
             {online && spark.uptime != null && (
               <span
-                className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 font-tabular text-[10px] font-medium text-accent"
+                className="metadata-tag shrink-0 rounded px-1.5 py-0.5 font-tabular text-[10px] font-medium"
                 title={`Uptime: ${formatUptime(spark.uptime)}`}
               >
                 {formatUptime(spark.uptime)}
@@ -83,7 +83,7 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
             )}
             {hermes?.monitoring && hermes.installed && hermes.version && (
               <span
-                className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 font-tabular text-[10px] font-medium text-accent"
+                className="metadata-tag shrink-0 rounded px-1.5 py-0.5 font-tabular text-[10px] font-medium"
                 title={`Hermes Agent ${hermes.version} installed on this machine`}
               >
                 Hermes
@@ -92,9 +92,9 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
             {hermes?.monitoring && hermes.installed === false && hermes.checkedAt != null && (
               <span
                 className="shrink-0 rounded bg-danger/15 px-1.5 py-0.5 text-[10px] font-medium text-danger"
-                title="The `hermes` binary was not found on this machine (check the install path or Edit Spark)."
+                title="此主机未找到 hermes 程序，请检查安装路径或节点配置。"
               >
-                Hermes not found
+                未找到 Hermes
               </span>
             )}
             {hermes?.monitoring &&
@@ -104,7 +104,7 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
                   className="max-w-[16rem] shrink-0 truncate rounded bg-danger/15 px-1.5 py-0.5 text-[10px] font-medium text-danger"
                   title={`Update check failed — it will retry automatically: ${hermes.error}`}
                 >
-                  Update check failed
+                  检查更新失败
                 </span>
               )}
           </div>

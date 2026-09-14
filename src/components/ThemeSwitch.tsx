@@ -9,7 +9,8 @@ const STORAGE_KEY = "sparkdash-theme";
 
 function getInitialTheme(): Theme {
   if (typeof window === "undefined") return "dark";
-  const stored = localStorage.getItem(STORAGE_KEY);
+  let stored: string | null = null;
+  try { stored = localStorage.getItem(STORAGE_KEY); } catch { /* Storage unavailable. */ }
   if ((stored as Theme | null) && THEME_CYCLE.includes(stored as Theme)) return stored as Theme;
   return "dark";
 }
@@ -19,7 +20,7 @@ export function ThemeSwitch() {
 
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
-    localStorage.setItem(STORAGE_KEY, theme);
+    try { localStorage.setItem(STORAGE_KEY, theme); } catch { /* Storage unavailable. */ }
   }, [theme]);
 
   const toggle = () =>

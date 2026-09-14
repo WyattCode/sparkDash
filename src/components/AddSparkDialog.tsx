@@ -39,8 +39,15 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
   const [testResult, setTestResult] = useState<SparkTestResponse | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [portsText, setPortsText] = useState(String(defaultLlmPort));
+  const busy = testing || saving;
+  const parsedPorts = portsText.trim() ? portsText.split(",").map((value) => {
+    const text = value.trim();
+    return /^\d+$/.test(text) ? Number(text) : NaN;
+  }) : [defaultLlmPort];
+  const portsValid = parsedPorts.every((port) => Number.isInteger(port) && port >= 1 && port <= 65535);
 
-  useEscape(onClose);
+  useEscape(() => { if (open && !busy) onClose(); });
 
   const { mounted, visible } = useModalPresence(open);
   const trapRef = useFocusTrap(mounted);
@@ -58,39 +65,52 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
   useEffect(() => {
     if (open) {
       setConfig((prev) => ({ ...prev, llmPorts: [defaultLlmPort] }));
+      setPortsText(String(defaultLlmPort));
+      setTestResult(null);
+      setError(null);
     }
   }, [open, defaultLlmPort]);
 
   if (!mounted) return null;
 
   const update = (patch: Partial<Omit<SparkConfig, "id">>) => {
+    setTestResult(null);
+    setError(null);
     setConfig((prev) => ({ ...prev, ...patch }));
   };
 
   const updateSsh = (patch: Partial<SparkConfig["ssh"]>) => {
+    setTestResult(null);
+    setError(null);
     setConfig((prev) => ({ ...prev, ssh: { ...prev.ssh, ...patch } }));
   };
 
   const buildPayload = (): SparkConfig => {
+    if (!portsValid) throw new Error("端口须为 1–65535 的整数，多个端口用英文逗号分隔。");
     const id = config.name.toLowerCase().replace(/[^a-z0-9]+/g, "-") || `spark-${Date.now()}`;
     const auth = config.ssh.auth;
     if (!config.isLocal && auth === "pass" && !config.ssh.password) {
-      throw new Error("Password is required when SSH auth is Password");
+      throw new Error("使用 SSH 密码认证时，请填写密码。");
     }
     return {
       ...config,
+      name: config.name.trim(),
+      lanIp: config.lanIp.trim(),
+      llmPorts: [...new Set(parsedPorts)],
       id,
       ssh: {
         ...config.ssh,
         // Always set host from lanIp when empty
-        host: config.ssh.host || config.lanIp,
+        host: config.ssh.host.trim() || config.lanIp.trim(),
       },
     };
   };
 
   const handleTest = async () => {
+    if (busy) return;
     setTesting(true);
     setTestResult(null);
+    setError(null);
     try {
       const payload = buildPayload();
       // Ephemeral test — no registry mutation
@@ -104,6 +124,7 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
   };
 
   const handleSave = async () => {
+    if (busy) return;
     setSaving(true);
     setError(null);
     try {
@@ -123,7 +144,7 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
     <div
       className={`modal-overlay${visible ? " is-open" : ""}`}
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget && !busy) onClose();
       }}
     >
       <div
@@ -134,37 +155,37 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
         aria-labelledby="add-spark-title"
       >
         <div className="modal-sheet__header" id="add-spark-title">
-          Add Spark/GPU Host
+          添加 Spark／GPU 主机
         </div>
 
         <div className="modal-sheet__body">
-        <div className="space-y-3">
+        <fieldset disabled={busy} className="space-y-3 min-w-0 border-0 p-0 m-0">
           <div>
-            <label className="mb-1 block text-xs text-muted">Unit type</label>
+            <label className="mb-1 block text-xs text-muted">设备类型</label>
             <select
               value={config.kind ?? "spark"}
               onChange={(e) => update({ kind: e.target.value as "spark" | "host" })}
               className="w-full rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text outline-none focus:border-accent"
             >
               <option value="spark">NVIDIA DGX Spark</option>
-              <option value="host">Dedicated GPU host (Linux, nvidia-smi, not a Spark)</option>
+              <option value="host">独立 GPU 主机（Linux，支持 nvidia-smi，非 Spark）</option>
             </select>
           </div>
 
           <div>
-            <label className="mb-1 block text-xs text-muted">Name</label>
+            <label className="mb-1 block text-xs text-muted">名称</label>
             <input
               type="text"
               value={config.name}
               onChange={(e) => update({ name: e.target.value })}
               className="w-full rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text outline-none focus:border-accent"
-              placeholder="My Spark"
+              placeholder="我的 Spark"
             />
           </div>
 
           <div>
             <label className="mb-1 block text-xs text-muted">
-              LAN IP {config.isLocal ? "(optional — browser links and Wake-on-LAN)" : "(required)"}
+              局域网 IP {config.isLocal ? "（可选，用于浏览器链接和局域网唤醒）" : "（必填）"}
             </label>
             <input
               type="text"
@@ -175,14 +196,14 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
             />
             {config.isLocal && !config.lanIp && (
               <p className="mt-1 text-[10px] text-muted">
-                Local metrics still work. Open links and directed Wake-on-LAN need a LAN IP.
+                本机指标仍可采集；打开链接及定向局域网唤醒需要填写局域网 IP。
               </p>
             )}
           </div>
 
           {config.kind !== "host" && (
             <div>
-              <label className="mb-1 block text-xs text-muted">CX7 IP (optional)</label>
+              <label className="mb-1 block text-xs text-muted">CX7 IP（可选）</label>
               <input
                 type="text"
                 value={config.cx7Ip || ""}
@@ -194,22 +215,24 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
           )}
 
           <div>
-            <label className="mb-1 block text-xs text-muted">LLM Ports (optional, comma-separated)</label>
+            <label className="mb-1 block text-xs text-muted">模型端口（可选，逗号分隔）</label>
             <input
               type="text"
-              value={(config.llmPorts ?? [defaultLlmPort]).join(", ")}
+              aria-label="模型端口"
+              aria-invalid={!portsValid}
+              aria-describedby={!portsValid ? "add-ports-error" : undefined}
+              value={portsText}
               onChange={(e) => {
-                const ports = e.target.value
-                  .split(",")
-                  .map((s) => parseInt(s.trim(), 10))
-                  .filter((n) => Number.isInteger(n) && n >= 1 && n <= 65535);
-                if (ports.length > 0) update({ llmPorts: ports });
+                setPortsText(e.target.value);
+                setTestResult(null);
+                setError(null);
               }}
               className="w-full rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text outline-none focus:border-accent"
               placeholder={String(defaultLlmPort)}
             />
+            {!portsValid && <p id="add-ports-error" role="alert" className="mt-1 text-xs text-danger">端口须为 1–65535 的整数，多个端口用英文逗号分隔。</p>}
             <p className="mt-1 text-[10px] text-muted">
-              Default: {defaultLlmPort}
+              默认： {defaultLlmPort}
             </p>
           </div>
 
@@ -220,13 +243,13 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
               onChange={(e) => update({ isLocal: e.target.checked })}
               className="rounded border-border"
             />
-            This host (local collectors — no SSH for metrics)
+            本机（本地采集，无需 SSH）
           </label>
 
           {!config.isLocal && (
             <>
               <div>
-                <label className="mb-1 block text-xs text-muted">SSH User</label>
+                <label className="mb-1 block text-xs text-muted">SSH 用户</label>
                 <input
                   type="text"
                   value={config.ssh.user}
@@ -236,28 +259,25 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
               </div>
 
               <div>
-                <label className="mb-1 block text-xs text-muted">SSH Auth</label>
+                <label className="mb-1 block text-xs text-muted">SSH 认证</label>
                 <select
                   value={config.ssh.auth}
                   onChange={(e) => updateSsh({ auth: e.target.value as "key" | "pass" })}
                   className="w-full rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text outline-none focus:border-accent"
                 >
-                  <option value="key">Key</option>
-                  <option value="pass">Password</option>
+                  <option value="key">密钥</option>
+                  <option value="pass">密码</option>
                 </select>
                 {config.ssh.auth === "key" && (
                   <p className="mt-1 text-[10px] text-muted">
-                    SSH runs on the sparkDash host (not your browser). In Docker, mount a private
-                    key at /root/.ssh/id_ed25519 (see docker-compose.yml) or set SSH_IDENTITY_FILE.
-                    IPs are from that host&apos;s network. Mark this machine as “This host” so it
-                    skips SSH.
+                    SSH 从 sparkDash 主机发起，不是浏览器。Docker 中需挂载私钥至 /root/.ssh/id_ed25519，或设置 SSH_IDENTITY_FILE。IP 必须从该主机可达；本机采集请勾选“本机”以跳过 SSH。
                   </p>
                 )}
               </div>
 
               {config.ssh.auth === "pass" && (
                 <div>
-                  <label className="mb-1 block text-xs text-muted">SSH Password</label>
+                  <label className="mb-1 block text-xs text-muted">SSH 密码</label>
                   <input
                     type="password"
                     value={config.ssh.password || ""}
@@ -266,19 +286,18 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
                     autoComplete="new-password"
                   />
                   <p className="mt-1 text-[10px] text-muted">
-                    Stored encrypted on the server (not in sparks.json, not returned by the API).
-                    Survives Docker restarts.
+                    在服务端加密保存，不写入 sparks.json，也不会由 API 返回；Docker 重启后仍保留。
                   </p>
                 </div>
               )}
             </>
           )}
-        </div>
+        </fieldset>
 
         {testResult && <ConnectivityResult result={testResult} />}
 
         {error && (
-          <div className="mt-3 rounded bg-danger/20 px-3 py-2 text-xs text-danger">{error}</div>
+          <div role="alert" className="mt-3 rounded bg-danger/20 px-3 py-2 text-xs text-danger">{error}</div>
         )}
         </div>
 
@@ -287,25 +306,26 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
             <button
               type="button"
               onClick={handleTest}
-              disabled={testing || (!config.isLocal && !config.lanIp)}
+              disabled={busy || !portsValid || (!config.isLocal && !config.lanIp.trim())}
               className="rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-muted hover:bg-surface-hover disabled:opacity-50"
             >
-              {testing ? "Testing..." : "Test"}
+              {testing ? "正在测试…" : "测试连接"}
             </button>
             <button
               type="button"
               onClick={onClose}
+              disabled={busy}
               className="rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-muted hover:bg-surface-hover"
             >
-              Cancel
+              取消
             </button>
             <button
               type="button"
               onClick={handleSave}
-              disabled={saving || !config.name || (!config.isLocal && !config.lanIp)}
+              disabled={busy || !portsValid || !config.name.trim() || (!config.isLocal && !config.lanIp.trim())}
               className="rounded bg-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-accent-hover disabled:opacity-50"
             >
-              {saving ? "Saving..." : "Save"}
+              {saving ? "正在保存…" : "保存"}
             </button>
           </div>
         </div>

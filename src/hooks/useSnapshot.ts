@@ -2,9 +2,10 @@ import { useEffect, useRef, useState, useCallback } from "react";
 import type { SparkSnapshot, WsSnapshot } from "../api/types";
 import { ingestSnapshots } from "./metricsStore";
 import { OVERVIEW_ID } from "../constants";
+import { validSnapshots } from './snapshotValidation';
+import { activeIdFromPath } from './useRoute';
+import { readAccessToken } from '../api/browserStorage';
 
-const TOKEN = (typeof localStorage !== "undefined" && localStorage.getItem("sparkdashToken")) || "";
-const WS_URL = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws${TOKEN ? `?token=${encodeURIComponent(TOKEN)}` : ""}`;
 const RECONNECT_DELAY = 2000;
 
 /**
@@ -18,7 +19,7 @@ export function useSnapshot() {
   const [snapshotGeneratedAt, setSnapshotGeneratedAt] = useState<number | null>(null);
   const [snapshotError, setSnapshotError] = useState<string | null>(null);
   const [refreshInterval, setRefreshInterval] = useState<number | null>(null);
-  const [activeId, setActiveId] = useState<string | null>(OVERVIEW_ID);
+  const [activeId, setActiveId] = useState<string | null>(() => activeIdFromPath(location.pathname));
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   /** When false, onclose must not schedule reconnect (unmount / intentional close). */
@@ -32,7 +33,9 @@ export function useSnapshot() {
     // Avoid duplicate sockets while OPEN or still CONNECTING
     if (state === WebSocket.OPEN || state === WebSocket.CONNECTING) return;
 
-    const ws = new WebSocket(WS_URL);
+    const token = readAccessToken();
+    const url = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/ws${token ? `?token=${encodeURIComponent(token)}` : ""}`;
+    const ws = new WebSocket(url);
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -44,7 +47,7 @@ export function useSnapshot() {
     ws.onmessage = (ev) => {
       try {
         const msg: WsSnapshot = JSON.parse(ev.data);
-        if (msg.type === "snapshot" && Array.isArray(msg.sparks)) {
+        if (msg?.type === "snapshot" && validSnapshots(msg.sparks) && (msg.generatedAt == null || Number.isFinite(msg.generatedAt))) {
           const receivedAt = Date.now();
           // Feed the central history store (8b) before notifying React state.
           ingestSnapshots(msg.sparks, msg.generatedAt ?? receivedAt);
@@ -66,10 +69,10 @@ export function useSnapshot() {
             return OVERVIEW_ID;
           });
         } else {
-          setSnapshotError("The server sent an invalid telemetry payload.");
+          setSnapshotError("服务器返回了无效的遥测数据，保留上次有效快照。");
         }
       } catch {
-        setSnapshotError("The server sent malformed telemetry data.");
+        setSnapshotError("服务器返回的遥测数据格式错误，保留上次有效快照。");
       }
     };
 

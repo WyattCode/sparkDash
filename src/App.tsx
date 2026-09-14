@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useSnapshot } from "./hooks/useSnapshot";
 import { useAppRoute, useRoute } from "./hooks/useRoute";
-import { fetchSparks, reorderSparks, fetchSettings } from "./api/client";
+import { fetchSparks, reorderSparks } from "./api/client";
 import { SparkTabs } from "./components/SparkTabs";
 import { AddSparkDialog } from "./components/AddSparkDialog";
 import { EditSparkDialog } from "./components/EditSparkDialog";
@@ -15,8 +15,10 @@ import { GearIcon, BoltIcon } from "./components/ui/icons";
 import { ConnectionBanner } from "./components/ui/ConnectionBanner";
 import { ErrorBanner } from "./components/ui/ErrorBanner";
 import { OVERVIEW_ID } from "./constants";
-import type { Settings, SparkSnapshot } from "./api/types";
+import type { SparkSnapshot } from "./api/types";
 import { isWorkerSpark } from "./api/sparkRole";
+import { useStartupPending } from "./hooks/useStartupPending";
+import { useDashboardSettings } from "./hooks/useDashboardSettings";
 
 /** Keep hidden worker ids in their original slots when the visible tabs are reordered. */
 function mergeTabOrderKeepingHidden(
@@ -139,8 +141,9 @@ function DashboardApp() {
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState<string | null>(null);
   const [showSettings, setShowSettings] = useState(false);
-  const [settings, setSettings] = useState<Settings | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const { settings, settingsSettled, handleSettingsSaved } = useDashboardSettings(setActionError);
+  const startupPending = useStartupPending(lastValidSnapshotAt != null, settingsSettled);
   /** Used when WS is down so add/delete still updates the tab bar */
   const [fallbackSparks, setFallbackSparks] = useState<SparkSnapshot[]>([]);
   const staleAfterMs = Math.max(10_000, 3 * (refreshInterval ?? 2_000));
@@ -204,25 +207,11 @@ function DashboardApp() {
     if (sparks.length > 0) setFallbackSparks([]);
   }, [sparks]);
 
-  // Fetch global settings on mount
-  useEffect(() => {
-    fetchSettings()
-      .then(setSettings)
-      .catch((err) =>
-        setActionError(
-          `Could not load settings: ${err instanceof Error ? err.message : String(err)}. Reload to retry.`
-        )
-      );
-  }, []);
-
-  const handleSettingsSaved = useCallback((s: Settings) => {
-    setSettings(s);
-  }, []);
-
   // Apply layout density (comfortable/compact) from persisted settings.
   useEffect(() => {
     if (settings?.density) {
       document.documentElement.setAttribute("data-density", settings.density);
+      try { localStorage.setItem("sparkdash-density", settings.density); } catch { /* Optional cache. */ }
     }
   }, [settings?.density]);
 
@@ -280,7 +269,7 @@ function DashboardApp() {
     } catch (err) {
       console.error("Failed to refresh sparks:", err);
       setActionError(
-        `Could not refresh Sparks: ${err instanceof Error ? err.message : String(err)}. Previous data remains visible.`
+        `无法刷新节点：${err instanceof Error ? err.message : String(err)}。仍显示上次数据。`
       );
     }
   }, [sparks, activeId, setActiveId]);
@@ -295,27 +284,30 @@ function DashboardApp() {
         console.error("Failed to reorder Sparks:", err);
         setOrderOverride(null);
         setActionError(
-          `Could not save the Spark order: ${err instanceof Error ? err.message : String(err)}. The previous order was restored.`
+          `无法保存节点顺序：${err instanceof Error ? err.message : String(err)}。已恢复原顺序。`
         );
       }
     },
     [displaySparks, hiddenWorkerIds]
   );
 
+  if (startupPending) return <div className="app-frame startup-screen" role="status" aria-live="polite">正在加载监控…</div>;
+
   return (
-    <div className="min-h-screen p-0 text-text sm:p-8">
+    <div className="app-frame min-h-screen text-text">
       <div className="dashboard-shell">
-        <header className="flex flex-wrap items-center gap-3" style={{ marginBottom: "var(--density-header-gap)" }}>
-          <button
-            type="button"
-            onClick={() => navigate(OVERVIEW_ID)}
+        <header className="dashboard-topbar flex flex-wrap items-center gap-3">
+          <a
+            href="/"
+            aria-label="sparkDash 首页并刷新"
+            title="返回首页并刷新页面"
             className="logo-pill"
           >
             <BoltIcon className="h-3.5 w-3.5 text-accent" />
             <span>
-              spark<span className="logo-pill-dash">Dash</span>
+              spark<span className="logo-pill-dash" translate="no">Dash</span>
             </span>
-          </button>
+          </a>
           <SparkTabs
             sparks={tabSparks}
             activeId={displayActive?.id ?? activeId}
@@ -329,8 +321,8 @@ function DashboardApp() {
               type="button"
               onClick={() => setShowSettings(true)}
               className="icon-circle"
-              title="Settings"
-              aria-label="Settings"
+              title="设置"
+              aria-label="设置"
             >
               <GearIcon className="h-4 w-4" />
             </button>
@@ -348,6 +340,7 @@ function DashboardApp() {
         <main className={telemetryStale || !connected ? "telemetry-stale" : undefined}>
           {isOverview ? (
             <OverviewPage
+              telemetryStale={telemetryStale || !connected}
               sparks={displaySparks}
               hideOffline={settings?.autoHideOffline ?? false}
               hideWorkers={hideWorkers}
@@ -368,11 +361,11 @@ function DashboardApp() {
               <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-accent-soft text-accent">
                 <span className="text-lg leading-none">+</span>
               </div>
-              <h2 className="text-sm font-semibold text-text-strong">No Spark registered</h2>
+              <h2 className="text-sm font-semibold text-text-strong">尚未添加设备</h2>
               <p className="mt-1 text-xs text-muted">
-                Click the&nbsp;
+                点击
                 <span className="rounded border border-border bg-surface-elevated px-1 py-0.5 text-text">+</span>
-                &nbsp;tab to add a DGX Spark unit.
+                标签以添加 DGX Spark 设备。
               </p>
             </div>
           )}
