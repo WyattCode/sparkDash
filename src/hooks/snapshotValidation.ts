@@ -11,6 +11,12 @@ export function validSnapshots(value: unknown): value is SparkSnapshot[] {
     if (!object(s.hardware) || !strings(s.disabledDevices) || !strings(s.disabledInterfaces)) return false;
     const m = s.metrics;
     if (!object(m) || !Array.isArray(m.storage) || !m.storage.every(object) || !Array.isArray(m.llm) || !m.llm.every(object)) return false;
+    // Available services render these values directly; reject corrupt frames
+    // before updating either React state or the metric history.
+    if (!m.llm.every(l => typeof l.available === 'boolean' &&
+      ['generationTps', 'prefillTps'].every(key => l[key] == null
+        ? !l.available
+        : typeof l[key] === 'number' && Number.isFinite(l[key]) && l[key] >= 0))) return false;
     if (m.gpu != null && (!object(m.gpu) || !object(m.gpu.power) || !object(m.gpu.vram))) return false;
     if (s.telemetry != null) {
       const t = s.telemetry;

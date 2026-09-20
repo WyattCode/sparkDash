@@ -129,8 +129,8 @@ export function GpuPanel({ gpu: inputGpu, cpu, sparkId, temperatureUnit, classNa
             : reason === "power"
               ? "功耗限制"
               : reason === "hw"
-                ? "HW"
-                : reason === 'ok' ? "OK" : '未采集';
+                ? "硬件限制"
+                : reason === 'ok' ? "正常" : '未采集';
         const chipClass =
           reason === "thermal"
             ? "border-danger/40 bg-danger/15 text-danger"
@@ -182,7 +182,7 @@ export function GpuPanel({ gpu: inputGpu, cpu, sparkId, temperatureUnit, classNa
           {vramTotal != null && vramTotal > 0 && vramUsed != null ? (
             <>
               <MetricBar
-                label="VRAM"
+                label="显存"
                 value={vramUsed}
                 max={vramTotal}
                 caption={vramTotal > 0 ? `${formatMb(vramUsed).replace(/ (GB|MB)$/, "")} / ${formatMb(vramTotal)}` : "—"}
@@ -196,7 +196,7 @@ export function GpuPanel({ gpu: inputGpu, cpu, sparkId, temperatureUnit, classNa
             </>
           ) : (
             <div className="flex justify-between text-xs">
-              <span className="text-muted">VRAM</span>
+              <span className="text-muted">显存</span>
               <span className="font-tabular text-text">
                 {vramUsed != null ? `${formatMb(vramUsed)} 已用` : "未采集"}
               </span>

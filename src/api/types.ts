@@ -520,6 +520,7 @@ export interface SparkSnapshot {
 // ─── WebSocket envelope ───────────────────────────────────
 export interface WsSnapshot {
   type: "snapshot";
+  bootId?: string;
   /** Server generation time; optional while clients and servers roll independently. */
   generatedAt?: number;
   sparks: SparkSnapshot[];
@@ -563,6 +564,8 @@ export interface Settings {
   showFleetExceptions: boolean;
   /** Overview search field + status filter. Off by default. */
   showOverviewSearch: boolean;
+  /** Benchmark dialogs offer "Copy image" — a PNG share card of the results. */
+  benchShareImage: boolean;
 }
 
 export interface SparksListResponse {
@@ -791,6 +794,8 @@ export interface PrefillBenchJob {
 export interface PrefillBenchDefaults {
   allowedContextSizes: number[];
   defaultContextSizes: number[];
+  minContextSize?: number;
+  maxContextSize?: number;
 }
 
 export interface PrefillBenchListResponse {

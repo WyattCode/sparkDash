@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {createServiceVerification,recordCurrent,registerVerificationRoutes} from '../../serviceVerification.js';
-const MODEL='deepseek-v4-flash-vision-exp',BOOT='2025-01-01T00:00:00.000Z';
+const MODEL='deepseek-v4.1-flash',BOOT='2025-01-01T00:00:00.000Z';
 function fixture(overrides={}) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'verify-test-'));
   const file=path.join(dir,'records.json');fs.writeFileSync(file,'{}');
@@ -31,6 +31,17 @@ test('records require matching model and boot; missing boot never passes',()=>{
 });
 test('GET independently verifies valid, missing and wrong keys; no inference or secrets in result',async()=>{
   const f=fixture();try{const s=await f.service.status();assert.equal(s.auth.status,'verified');assert.equal(f.calls.length,3);assert.ok(f.calls.every(c=>c.opts.method==='GET'));assert.ok(!JSON.stringify(s).includes('SECRET'));await f.service.status();assert.equal(f.calls.length,3);}finally{f.cleanup();}
+});
+test('model paths match the served adapter without bypassing node configuration',async()=>{
+  const model='/models/DeepSeek-V4.1-Flash';
+  const f=fixture({snapshots:()=>[{id:'head',name:'fixture-head',isLocal:true,role:'head',llmPort:8888,metrics:{llm:[{modelId:model}]}}]});
+  try {
+    const state=await f.service.status();
+    assert.equal(state.supported,true);
+    assert.equal(state.model,model);
+    assert.equal(state.auth.status,'verified');
+    assert.ok(f.calls.every(c=>c.opts.method==='GET'));
+  } finally {f.cleanup();}
 });
 test('manual verification persists bounded text and image results, then rate limits',async()=>{
   const f=fixture();try{
@@ -84,7 +95,7 @@ for (const scenario of ['stale','down','busy','different-instance','missing','in
     const g=fixture({fetchImpl:async(url,opts)=>{
       if(!String(url).includes(':9090'))return f.fetchImpl(url,opts);
       const q=new URL(url).searchParams.get('query');
-      const row={metric:{instance:scenario==='different-instance'&&q.includes('waiting')?'other:8888':'head:8888'},value:[Date.now()/1000,q.startsWith('timestamp(')?String(Date.now()/1000-(scenario==='stale'?120:0)):q.startsWith('up{')?(scenario==='down'?'0':'1'):(scenario==='busy'?'2':'0')]};
+      const row={metric:{instance:scenario==='different-instance'&&q.includes('num_queue_reqs')?'other:8888':'head:8888'},value:[Date.now()/1000,q.startsWith('timestamp(')?String(Date.now()/1000-(scenario==='stale'?120:0)):q.startsWith('up{')?(scenario==='down'?'0':'1'):(scenario==='busy'?'2':'0')]};
       if(scenario==='invalid')row.value[1]='NaN';
       return {ok:true,json:async()=>({status:'success',data:{result:scenario==='missing'?[]:[row]}})};
     }});

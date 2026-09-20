@@ -5,9 +5,10 @@ import { recordLabel, recordNote, verificationTone, type Verification } from './
 import { completeSum, finite, gpuReady, metricValue, nodeIssues, percent, sampleHint, type Operations, type Series } from './operationsModel';
 import { FleetEnergyCard } from './FleetEnergyCard';
 import { buildDiagnostics } from './diagnostics';
+import { formatCount, formatEstimatedCount } from '../../metricCounts';
 
-function Stat({label, value, note, tone}: {label: string; value: string; note?: string; tone?: 'success'|'warning'|'danger'|'neutral'}) {
-  return <div className="ops-stat"><span>{label}</span><strong className={`font-tabular${tone?' ops-status-value':''}`} data-tone={tone}>{value}</strong>{note && <small>{note}</small>}</div>;
+function Stat({label, value, note, tone, highlight = false}: {label: string; value: string; note?: string; tone?: 'success'|'warning'|'danger'|'neutral'; highlight?: boolean}) {
+  return <div className="ops-stat"><span>{label}</span><strong className={`font-tabular${tone?' ops-status-value':''}`} data-tone={tone} style={highlight ? {color:'var(--color-warning)'} : undefined}>{value}</strong>{note && <small>{note}</small>}</div>;
 }
 const number = (v: number | null, unit = '') => v == null ? '未采集' : `${v.toFixed(1)}${unit}`;
 const latency = (v: number | null, samples: number | null) => samples === 0 ? '暂无样本' : v == null ? '不可用' : v < 1 ? `${(v * 1000).toFixed(1)} ms` : `${v.toFixed(2)} s`;
@@ -132,12 +133,12 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
     finally {setChecking(null);}
   }
   return <section className="ops-console" aria-label="模型服务控制台">
-    <div className="ops-heading"><div><h2>模型服务控制台</h2><p className="ops-note">{error || (data ? `监控更新：${new Date(data.generatedAt).toLocaleTimeString('zh-CN')} · ${old?'数据已过期':'数据有效'}` : '正在读取监控…')}</p></div><div className="ops-controls"><button className="ui-action-primary" onClick={()=>void refresh()} disabled={loading}>{loading?'检查中…':'检查监控'}</button><button onClick={download}>导出诊断</button><a href={`http://${location.hostname}:3000/`} target="_blank" rel="noreferrer">Grafana 看板</a></div></div>
+    <div className="ops-heading"><div><h2>模型服务控制台</h2><p className="ops-note">{error || (data ? `监控更新：${new Date(data.generatedAt).toLocaleTimeString('zh-CN')} · ${old?'数据已过期':'数据有效'}` : '正在读取监控…')}</p></div><div className="ops-controls"><button className="ui-action-primary" onClick={()=>void refresh()} disabled={loading}>{loading?'检查中…':'检查监控'}</button><button onClick={download}>导出诊断</button><a href={`http://${location.hostname}:3000/`} target="_blank" rel="noreferrer">Grafana 详细看板</a></div></div>
     {exportNote && <p role="status" className="ops-note">{exportNote}</p>}
     <div className="ops-grid ops-health">
       <Stat label="节点在线" value={stale?'数据已过期':`${sparks.filter(s=>s.online).length} / ${sparks.length}`} note="包含隐藏或筛选掉的节点"/>
       <Stat label="GPU 指标" value={stale?'数据已过期':`${sparks.filter(gpuReady).length} / ${sparks.length}`} note="有效采集独立于主机在线"/>
-      <Stat label="模型 API 探测" value={stale?'数据已过期':`${services.filter(s=>s.online&&s.metrics.llm.some(l=>l.available)).length} / ${services.length}`} note="接口可达不代表推理验收通过"/>
+      <Stat label="模型 API 探测" value={stale?'数据已过期':`${services.filter(s=>s.online&&s.metrics.llm.some(l=>l.available)).length} / ${services.length}`} note="按节点统计至少一个 API 可达，非模型数；不代表推理验收通过"/>
       <Stat label="当前节点异常" value={stale?'未知':String(new Set(issues.map(i=>i.id)).size)} note="离线、指标缺失、API、降频及磁盘"/>
     </div>
     {!!issues.length&&<div className="ops-alerts">{issues.map((v,i)=><button key={i} onClick={()=>onSelect?.(v.id)}>{v.name}：{v.message} · 查看节点</button>)}</div>}
@@ -163,10 +164,10 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
             <button className="ops-service-link" onClick={()=>onSelect?.(s.id)}>服务详情</button>
           </header>
           <div className="ops-grid">
-            <Stat label="输出吞吐" value={stale||!s.online||!llm.available?'不可用':number(finite(llm.generationTps),' tok/s')} note="模型服务口径，不按 Worker 重复统计"/>
+            <Stat label="输出吞吐" highlight={!stale && s.online && llm.available && finite(llm.generationTps) != null} value={stale||!s.online||!llm.available?'不可用':number(finite(llm.generationTps),' tok/s')} note="模型服务口径，不按 Worker 重复统计"/>
             <Stat label="输入吞吐" value={stale||!s.online||!llm.available?'不可用':number(finite(llm.prefillTps),' tok/s')} note="预填充，与输出分开统计"/>
-            <Stat label="运行 / 排队请求" value={`${number(v('running'))} / ${number(v('waiting'))}`}/>
-            <Stat label="推理接口 HTTP 成功率" value={usable?percent(v('httpOk'),httpTotal):'未采集'} note={`过去 30 分钟 · ${httpTotal==null?'无计数':`约 ${Math.round(httpTotal)} 次响应`} · 不含健康探测；不代表流式完成率`}/>
+            <Stat label="处理中 / 排队中" value={`${formatCount(v('running'))} / ${formatCount(v('waiting'))}`} note="单位：个请求 · 非模型数或人数"/>
+            <Stat label="推理接口 HTTP 成功率" value={usable?percent(v('httpOk'),httpTotal):'未采集'} note={`过去 30 分钟 · 响应计数：${formatEstimatedCount(httpTotal)} · 不含健康探测；不代表流式完成率`}/>
             {(['ttft','itl','e2e'] as const).map((k,j)=><Stat key={k} label={['首 Token 延迟 P95','Token 间延迟 P95','总耗时 P95'][j]} value={latency(v(k),v(`${k}Samples`))} note={`服务端 · 过去 30 分钟 · ${sampleHint(v(`${k}Samples`))}${k==='itl'?'（Token 间隔）':''}`}/>)}
             <Stat label="排队延迟 P95" value={latency(v('queue'),v('queueSamples'))} note={`过去 30 分钟 · ${sampleHint(v('queueSamples'))}`}/>
             <Stat label="前缀缓存命中率" value={v('cache')==null?'暂无样本':number((v('cache') as number)*100,'%')} note="过去 30 分钟 · 命中 / 查询"/>
@@ -185,8 +186,8 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
                 </section>
                 <section aria-label="请求统计">
                   <h4>请求统计 <small>过去 30 分钟</small></h4>
-                  <div className="ops-legend">{['finished','httpErrors'].flatMap(k=>usable?(data?.metrics[k]?.series||[]).filter(r=>r.labels.node===s.name&&r.labels.instance===target?.labels.instance).map((r,n)=><span key={`${k}${n}`}>{r.labels.finished_reason||r.labels.status}：{number(r.points.at(-1)?.[1]??null)}</span>):[])}</div>
-                  <p className="ops-note">请求结束原因与 HTTP 错误；缺失计数不推断为零，HTTP 成功不等同于推理完成。</p>
+                  <div className="ops-legend">{['finished','httpErrors'].flatMap(k=>usable?(data?.metrics[k]?.series||[]).filter(r=>r.labels.node===s.name&&r.labels.instance===target?.labels.instance).map((r,n)=><span key={`${k}${n}`}>{r.labels.finished_reason||r.labels.status_code}：{formatEstimatedCount(r.points.at(-1)?.[1]??null)}</span>):[])}</div>
+                  <p className="ops-note">过去 30 分钟计数为监控估算值；缺失不推断为零，HTTP 成功不等同于推理完成。</p>
                 </section>
               </div>
             </details>

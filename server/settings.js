@@ -27,29 +27,31 @@ const DEFAULTS = Object.freeze({
   showFleetExceptions: false,
   /** Overview search + status filter row. Off by default. */
   showOverviewSearch: false,
+  /**
+   * Benchmark dialogs offer the share-card format. On by default: the extra
+   * control is one caret next to a button that already copies, and anyone who
+   * does not want it can turn it off here (see the README's settings table).
+   */
+  benchShareImage: true,
 });
 
 /** @type {typeof DEFAULTS} */
 let _settings = { ...DEFAULTS };
 
 function _clampSettings(settings) {
-  const s = { ...settings };
+  const s = Object.fromEntries(Object.keys(DEFAULTS).map(key => [key, settings[key]]));
   // Clamp poll interval to 1000ms minimum
-  if (typeof s.pollIntervalMs !== "number" || s.pollIntervalMs < 1000) {
-    s.pollIntervalMs = 1000;
-  }
+  s.pollIntervalMs = Number.isFinite(s.pollIntervalMs)
+    ? Math.min(2147483647, Math.max(1000, Math.trunc(s.pollIntervalMs)))
+    : DEFAULTS.pollIntervalMs;
   // Clamp LLM port to 1–65535
-  if (typeof s.defaultLlmPort !== "number" || s.defaultLlmPort < 1 || s.defaultLlmPort > 65535) {
+  if (!Number.isInteger(s.defaultLlmPort) || s.defaultLlmPort < 1 || s.defaultLlmPort > 65535) {
     s.defaultLlmPort = DEFAULTS.defaultLlmPort;
   }
   // Ensure autoHideOffline is boolean
-  s.autoHideOffline = Boolean(s.autoHideOffline);
-  s.hideWorkers = Boolean(s.hideWorkers);
-  // Ensure benchDebugTraces is boolean
-  s.benchDebugTraces = Boolean(s.benchDebugTraces);
-  s.showFleetEnergy = Boolean(s.showFleetEnergy);
-  s.showFleetExceptions = Boolean(s.showFleetExceptions);
-  s.showOverviewSearch = Boolean(s.showOverviewSearch);
+  for (const [key, fallback] of Object.entries(DEFAULTS)) {
+    if (typeof fallback === "boolean" && typeof s[key] !== "boolean") s[key] = fallback;
+  }
   // Ensure temperatureUnit is valid
   if (s.temperatureUnit !== "celsius" && s.temperatureUnit !== "fahrenheit") {
     s.temperatureUnit = DEFAULTS.temperatureUnit;
@@ -80,14 +82,9 @@ export function loadSettings() {
 }
 
 /** Persist current settings to disk. */
-export function saveSettings() {
-  try {
-    // Atomic write (tmp + rename) — a SIGKILL/power loss mid-write must not
-    // truncate settings.json. atomicWrite ensures the dir is created.
-    atomicWrite(SETTINGS_PATH, JSON.stringify(_settings, null, 2) + "\n", 0o644);
-  } catch (err) {
-    console.error("[settings] Failed to save settings.json:", err.message);
-  }
+export function saveSettings(settings = _settings) {
+  // Failed replacement leaves the existing file intact.
+  atomicWrite(SETTINGS_PATH, JSON.stringify(settings, null, 2) + "\n", 0o644);
 }
 
 /** Get current settings (clamped). */
@@ -101,8 +98,12 @@ export function getSettings() {
  * @returns {typeof DEFAULTS}
  */
 export function updateSettings(patch) {
+  if (!patch || typeof patch !== "object" || Array.isArray(patch)) {
+    throw new Error("设置必须是一个对象");
+  }
   const merged = _clampSettings({ ..._settings, ...patch });
+  // Commit in memory only after persistence succeeds.
+  saveSettings(merged);
   _settings = merged;
-  saveSettings();
   return { ..._settings };
 }

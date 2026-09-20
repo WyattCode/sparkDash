@@ -14,13 +14,18 @@ import { PrefillBenchDialog } from "./PrefillBenchDialog";
 import { LlmDailyChart } from "./LlmDailyChart";
 import { parseLlmTargetInput } from "../../shared/llmTarget.js";
 import { LlmTrendChart } from "./LlmTrendChart";
+import { formatCount } from '../../metricCounts';
 
 interface LlmPanelProps {
   llm: LlmMetrics | null;
   sparkId: string;
+  /** Unit display name — lands on the benchmark share card. */
+  sparkName?: string;
   llmPort: number;
   llmPorts?: number[];
   hasApiKey?: boolean;
+  /** Show "Copy image" in the benchmark dialogs (Settings, off by default). */
+  shareImage?: boolean;
   onRemovePort?: (port: number) => void;
   className?: string;
 }
@@ -29,7 +34,7 @@ const VLLM_METRIC_INFO = {
   kvCache:
     "引擎当前 KV 缓存占用比例（0–100%）。较高占用（≥80%）意味着新请求或长上下文余量较少，可能出现排队或抢占。",
   requests:
-    "运行：正在 GPU 上生成的请求。排队：已接受但尚未调度的请求。排队增长且 KV 缓存占用较高时，通常表示容量紧张。",
+    "处理中：引擎正在处理的请求，可能处于预填充或生成阶段。排队中：等待调度的请求。统计的是请求数，不是模型数或使用人数；一个人或程序可以同时发出多个请求。",
   ttftP95:
     "引擎请求历史中的首 Token 延迟 P95。上升可能来自排队、长预填充或冷启动路径，不等于平均解码速度下降。",
   preempts:
@@ -272,7 +277,7 @@ function BackendBadge({ backend }: { backend: string | null }) {
   const labels: Record<string, string> = {
     vllm: "vLLM",
     "llama.cpp": "llama.cpp",
-    sglang: "sgLang",
+    sglang: "SGLang",
     ds4: "ds4",
     exl3: "EXL3",
     q27: "q27",
@@ -384,9 +389,11 @@ function MetricInfoTip({
 export function LlmPanel({
   llm,
   sparkId,
+  sparkName,
   llmPort,
   llmPorts,
   hasApiKey = false,
+  shareImage = false,
   onRemovePort,
   className,
 }: LlmPanelProps) {
@@ -789,7 +796,7 @@ export function LlmPanel({
                 {(llm?.slotsTotal ?? 0) > 0
                   ? `${llm?.slotsActive ?? 0} / ${llm?.slotsTotal ?? 0}`
                   : (llm?.slotsActive ?? 0) > 0
-                    ? `${llm?.slotsActive} running`
+                    ? `${llm?.slotsActive} 运行中`
                     : "—"}
               </div>
             </div>
@@ -894,19 +901,13 @@ export function LlmPanel({
                   align="right"
                 />
                 <div className="font-tabular text-sm text-text">
-                  {llm.requestsRunning != null
-                    ? `${Math.round(llm.requestsRunning)} run${
-                        llm.requestsWaiting != null
-                          ? ` / ${Math.round(llm.requestsWaiting)} wait`
-                          : ""
-                      }`
-                    : "—"}
+                  {formatCount(llm.requestsRunning)} 处理中 / {formatCount(llm.requestsWaiting)} 排队中
                 </div>
               </div>
               <div className="space-y-0.5">
                 <MetricInfoTip
                   id="ttftP95"
-                  label="首字延迟 P95"
+                  label="首 Token 延迟 P95"
                   text={VLLM_METRIC_INFO.ttftP95}
                   openId={metricInfoId}
                   setOpenId={setMetricInfoId}
@@ -925,9 +926,7 @@ export function LlmPanel({
                   align="right"
                 />
                 <div className="font-tabular text-sm text-text">
-                  {llm.preemptionsTotal != null
-                    ? Math.round(llm.preemptionsTotal).toLocaleString()
-                    : "—"}
+                  {formatCount(llm.preemptionsTotal)}
                 </div>
               </div>
             </div>
@@ -952,7 +951,7 @@ export function LlmPanel({
               <div className="space-y-0.5">
                 <MetricInfoTip
                   id="e2eP95"
-                  label="E2E p95"
+                  label="总耗时 P95"
                   text={VLLM_METRIC_INFO.e2eP95}
                   openId={metricInfoId}
                   setOpenId={setMetricInfoId}
@@ -965,7 +964,7 @@ export function LlmPanel({
               <div className="space-y-0.5">
                 <MetricInfoTip
                   id="itlP95"
-                  label="字间延迟 P95"
+                  label="Token 间延迟 P95"
                   text={VLLM_METRIC_INFO.itlP95}
                   openId={metricInfoId}
                   setOpenId={setMetricInfoId}
@@ -1011,6 +1010,8 @@ export function LlmPanel({
         llmPort={llmPort}
         modelId={remoteTarget ? null : llm?.modelId ?? null}
         remoteTarget={remoteTarget}
+        shareImage={shareImage}
+        sparkName={sparkName ?? null}
       />
       <PrefillBenchDialog
         open={prefillBenchOpen}
@@ -1020,6 +1021,8 @@ export function LlmPanel({
         modelId={remoteTarget ? null : llm?.modelId ?? null}
         contextLength={remoteTarget ? null : llm?.contextLength ?? null}
         remoteTarget={remoteTarget}
+        shareImage={shareImage}
+        sparkName={sparkName ?? null}
       />
     </Panel>
   );

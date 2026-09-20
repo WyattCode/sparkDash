@@ -418,7 +418,7 @@ export function HermesUpdateDialog() {
             <div className="space-y-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="rounded bg-accent/15 px-1.5 py-0.5 font-tabular text-[11px] font-medium text-accent">
-                  {upd.pending.count} 提交{upd.pending.count === 1 ? "" : "s"} 落后于 main
+                  {upd.pending.count} 个提交落后于 main
                 </span>
                 {upd.installedVersion && (
                   <span className="text-[11px] text-muted">（已安装 v{upd.installedVersion})</span>
@@ -445,7 +445,7 @@ export function HermesUpdateDialog() {
             <div className="space-y-3">
               {upd.pending?.commits?.length ? (
                 <p className="text-[11px] text-muted">
-                  此次更新还包括 {upd.pending.count} 提交
+                  此次更新还包括 {upd.pending.count} 个提交
                   {upd.pending.count === 1 ? "" : "s"} 基于下方版本的额外改动。
                 </p>
               ) : null}

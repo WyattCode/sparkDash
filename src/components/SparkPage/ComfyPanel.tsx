@@ -93,7 +93,7 @@ function ProgressBar({ progress }: { progress: ComfyProgress }) {
         : 0;
   const label =
     progress.nodeLabel ||
-    (progress.source === "estimate" ? "Elapsed (est.)" : "Progress");
+    (progress.source === "estimate" ? "已用时间（估算）" : "进度");
   const detail =
     progress.max > 0 && progress.source === "ws"
       ? `${Math.round(progress.value)}/${Math.round(progress.max)}`
@@ -274,7 +274,7 @@ export function ComfyPanel({
             target="_blank"
             rel="noopener noreferrer"
             onClick={handleOpenComfy}
-            title={`Open ComfyUI at ${openUrl} (must be reachable from your browser)`}
+            title={`在 ${openUrl} 打开 ComfyUI（需浏览器可直接访问）`}
             className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:border-accent hover:text-accent"
           >
             <ExternalLinkIcon className="h-3 w-3" />

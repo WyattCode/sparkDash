@@ -123,6 +123,24 @@ export class LlmProbe {
     this._lastDetectAt = 0;
     /** @type {{ value: number, liveUntil: number } | null} */
     this._sglangStickyTps = null;
+    /** Whether this poll's /server_info carried total_input/output_tokens. */
+    this._sglangTotalsPolled = false;
+    /**
+     * Series that seeded `lastTokenCounts` — "server_info" or "prometheus".
+     * They count the same work under different names, so a hand-off re-seeds
+     * the baseline instead of differencing across the two.
+     * @type {"server_info" | "prometheus" | null}
+     */
+    this._sglangTokenSource = null;
+    /**
+     * Which counter seeded `lastTokenCounts.input` — "effective" (mode="input")
+     * or "prompt" (prompt_tokens_total). The two count different things, so a
+     * flip between them re-seeds instead of differencing across series.
+     * @type {"effective" | "prompt" | null}
+     */
+    this._sglangInputMode = null;
+    /** Which counter pair seeded `lastPrefillKinds` ("effective" | "fallback"). */
+    this._sglangSplitMode = null;
   }
 
   /**
@@ -143,19 +161,22 @@ export class LlmProbe {
    * @param {number|null|undefined} cachedCount
    * @param {number|null|undefined} computedCount
    * @param {number} dtSec
+   * @param {string} [mode] Source series ("effective" | "fallback"); a change re-seeds.
    */
-  _setPrefillSplitRates(cachedCount, computedCount, dtSec) {
+  _setPrefillSplitRates(cachedCount, computedCount, dtSec, mode) {
     if (cachedCount == null || computedCount == null || !Number.isFinite(cachedCount) || !Number.isFinite(computedCount)) {
       this.cachedPrefillTps = null;
       this.uncachedPrefillTps = null;
       this.lastPrefillKinds = null;
+      this._sglangSplitMode = null;
       return;
     }
     const total = cachedCount + computedCount;
     this.prefixCacheHitRate =
       total > 0 ? Math.round((cachedCount / total) * 10000) / 10000 : null;
-    if (this.lastPrefillKinds == null) {
+    if (this.lastPrefillKinds == null || (mode != null && this._sglangSplitMode !== mode)) {
       this.lastPrefillKinds = { cached: cachedCount, computed: computedCount };
+      this._sglangSplitMode = mode ?? this._sglangSplitMode;
       this.cachedPrefillTps = 0;
       this.uncachedPrefillTps = 0;
       return;
@@ -167,6 +188,7 @@ export class LlmProbe {
       this.uncachedPrefillTps = Math.max(0, Math.round((dComputed / dtSec) * 100) / 100);
     }
     this.lastPrefillKinds = { cached: cachedCount, computed: computedCount };
+    this._sglangSplitMode = mode ?? this._sglangSplitMode;
   }
 
   /** Update probe port (and host from spark). Resets detection when the target changes. */
@@ -259,6 +281,10 @@ export class LlmProbe {
     this.lastTtftCount = null;
     this.lastIterSum = null;
     this._sglangStickyTps = null;
+    this._sglangTotalsPolled = false;
+    this._sglangTokenSource = null;
+    this._sglangInputMode = null;
+    this._sglangSplitMode = null;
   }
 
   /** Note auth from an HTTP status on an unauthenticated probe request. */
@@ -442,8 +468,9 @@ export class LlmProbe {
     this.lastProbeTime = now;
 
     // Model info from /v1/models — 401/403 means protected; other failure = down
-    let modelsOk = false;
+let modelsOk = false;
     let owned = null;
+    let servedModelId = null;
     try {
       const modelsRes = await this._fetch(`${this.baseUrl}/v1/models`);
       const auth = this._noteAuthStatus(modelsRes.status);
@@ -454,7 +481,8 @@ export class LlmProbe {
         modelsOk = true;
         const modelsData = await modelsRes.json();
         const model = modelsData?.data?.[0];
-        this.modelId = normalizeModelId(model?.id || null);
+        servedModelId = normalizeModelId(model?.id || null);
+        this.modelId = servedModelId;
         // Drop HF hub cache paths from modelPath if /v1/models id was a cache dir
         if (isHfHubCachePath(model?.id)) this.modelPath = null;
         // ds4-server uses context_length; vLLM uses max_model_len
@@ -499,6 +527,7 @@ export class LlmProbe {
     // SGLang: native info endpoints. Skip on known vLLM/ds4 to avoid 404 spam.
     // Prefer /server_info — /get_server_info is a deprecated alias that logs every poll.
     if (this.backendType === "sglang" || this.backendType == null) {
+      this._sglangTotalsPolled = false;
       const sgData = await this._fetchSglangJson(SGLANG_SERVER_INFO_PATHS);
       if (sgData) {
         this.backendType = "sglang";
@@ -514,19 +543,24 @@ export class LlmProbe {
 
     if (this.backendType === "sglang") {
       // Prometheus is optional (--enable-metrics). Do not mix those counters
-      // into lastTokenCounts when server-info already produced live rates.
+      // into lastTokenCounts when this poll's server-info totals own them.
+      // Gate on which series answered, never on the displayed rates: a live
+      // rate keeps the split path selected forever, and the split path is not
+      // allowed to clear prefillTps — the value then latches (#99).
       try {
         const metricsRes = await this._fetch(`${this.baseUrl}/metrics`);
         if (metricsRes.ok) {
           const txt = await metricsRes.text();
-          const idle = this.generationTps === 0 && this.prefillTps === 0;
-          if (idle) this._applySglangMetrics(txt, dtSec);
-          else this._applySglangPrefillSplit(txt, dtSec);
+          if (this._sglangTotalsPolled) this._applySglangPrefillSplit(txt, dtSec);
+          else this._applySglangMetrics(txt, dtSec);
         }
       } catch {
         /* metrics optional */
       }
       await this._enrichSglangModelInfo();
+      // Native SGLang endpoints expose the storage path (often just `/model`).
+      // Keep that as modelPath, but show/use the client-facing served model ID.
+      if (servedModelId) this.modelId = servedModelId;
       return this._getSnapshot();
     }
 
@@ -939,7 +973,10 @@ export class LlmProbe {
         null;
     }
 
-    if (sgData.model_path) {
+    const served = sgData.served_model_name || sgData.model_alias;
+    if (typeof served === "string" && served.trim()) {
+      applyModelRef(this, served);
+    } else if (sgData.model_path) {
       applyModelRef(this, sgData.model_path);
     }
 
@@ -959,6 +996,8 @@ export class LlmProbe {
         this.lastTokenCounts.input = input;
         this.lastTokenCounts.output = output;
         this.totalOutputTokens = output;
+        this._sglangTotalsPolled = true;
+        this._sglangTokenSource = "server_info";
         if (dtSec > 0 && dtSec < 10) {
           this.generationTps = Math.max(0, Math.round((deltaOut / dtSec) * 100) / 100);
           this._setPrefillTps(deltaIn / dtSec, deltaOut > 0);
@@ -1139,9 +1178,6 @@ export class LlmProbe {
     const gen =
       this._getPromMetric(txt, "sglang:generation_tokens_total") ??
       this._getPromMetric(txt, "sglang_generation_tokens_total");
-    const prompt =
-      this._getPromMetric(txt, "sglang:prompt_tokens_total") ??
-      this._getPromMetric(txt, "sglang_prompt_tokens_total");
     if (gen == null) {
       const gauge =
         this._getPromMetric(txt, "sglang:gen_throughput") ??
@@ -1152,18 +1188,49 @@ export class LlmProbe {
       return;
     }
 
-    if (dtSec > 0 && dtSec < 10) {
+    // Prefer SGLang's effective prefill counters, which cleanly separate GPU
+    // computation (mode="input") from prefix-cache hits (mode="*_hit"). The
+    // older prompt_tokens_total mixes both, so a cache-hit burst reported
+    // tens of thousands of tok/s as "input throughput" when the GPU did no
+    // prefill work at all. Fall back to prompt_tokens_total when the split
+    // metrics are absent (older builds).
+    const effective = this._sglangEffectivePrefill(txt);
+    const prompt =
+      effective?.total ??
+      this._getPromMetric(txt, "sglang:prompt_tokens_total") ??
+      this._getPromMetric(txt, "sglang_prompt_tokens_total");
+    const computed = effective?.computed ?? null;
+
+    // Difference only against our own baseline; after a server-info hand-off
+    // the first sample seeds instead of reporting the gap between two series.
+    const ownsBaseline = this._sglangTokenSource !== "server_info";
+    const inputMode = computed != null ? "effective" : prompt != null ? "prompt" : null;
+    // A flip between the effective and total counters is a different series:
+    // only difference when the stored mode matches this poll's.
+    const inputOwned = ownsBaseline && inputMode != null && this._sglangInputMode === inputMode;
+    if (ownsBaseline && dtSec > 0 && dtSec < 10) {
       const deltaOut = gen - this.lastTokenCounts.output;
       this.generationTps = Math.max(0, Math.round((deltaOut / dtSec) * 100) / 100);
-      if (prompt != null) {
+      if (inputOwned && inputMode === "effective") {
+        // Input throughput = tokens actually computed on GPU. Cache hits are
+        // reported separately via cachedPrefillTps / prefixCacheHitRate.
+        const deltaIn = computed - this.lastTokenCounts.input;
+        this._setPrefillTps(deltaIn / dtSec, deltaOut > 0);
+      } else if (inputOwned && inputMode === "prompt") {
         const deltaIn = prompt - this.lastTokenCounts.input;
         this._setPrefillTps(deltaIn / dtSec, deltaOut > 0);
-        this.lastTokenCounts.input = prompt;
-      } else if (deltaOut <= 0) {
+      } else if (inputMode == null && deltaOut <= 0) {
         this.prefillTps = 0;
       }
     }
+    // Seed the prefill baseline even on the first oversized-dt sample or after
+    // a server-info hand-off; otherwise the next poll treats the whole
+    // cumulative counter as a delta and reports an impossible tok/s spike (#99).
     this.lastTokenCounts.output = gen;
+    if (computed != null) this.lastTokenCounts.input = computed;
+    else if (prompt != null) this.lastTokenCounts.input = prompt;
+    this._sglangInputMode = inputMode;
+    this._sglangTokenSource = "prometheus";
     this.totalOutputTokens = gen;
 
     const running =
@@ -1174,23 +1241,62 @@ export class LlmProbe {
       this.slotsActive = Math.round(running);
     }
 
-    const cached = this._sglangCachedTokens(txt);
-    if (cached != null && prompt != null) {
-      this._setPrefillSplitRates(cached, prompt, dtSec);
+    if (effective != null) {
+      this._setPrefillSplitRates(effective.cached, effective.computed, dtSec, "effective");
+    } else {
+      const cached = this._sglangCachedTokens(txt);
+      if (cached != null && prompt != null) {
+        // prompt_tokens_total counts ALL prefill tokens (cached hits +
+        // computed). _setPrefillSplitRates expects DISJOINT cached/computed
+        // counters (like ds4/q27), so pass the computed remainder — otherwise
+        // the hit rate and uncached prefill rate are both inflated.
+        this._setPrefillSplitRates(cached, Math.max(0, prompt - cached), dtSec, "fallback");
+      }
     }
   }
 
   /**
-   * Cache split only — does not touch generation/prefill lastTokenCounts.
-   * Prefers cache_source="device" so HiCache L1/L2/L3 labels are not summed.
+   * SGLang effective prefill counters: computed (mode="input") plus the sum of
+   * all prefix-cache hit tiers (device/host/storage). Returns null when the
+   * metric is absent so callers can fall back to prompt_tokens_total.
+   * @param {string} txt
+   * @returns {{computed: number, cached: number, total: number} | null}
+   */
+  _sglangEffectivePrefill(txt) {
+    const computed =
+      this._getPromMetricLabeled(txt, "sglang:prefill_effective_tokens_total", "mode", "input") ??
+      this._getPromMetricLabeled(txt, "sglang_prefill_effective_tokens_total", "mode", "input");
+    if (computed == null) return null;
+    const cached =
+      (this._getPromMetricLabeled(txt, "sglang:prefill_effective_tokens_total", "mode", "device_hit") ?? 0) +
+      (this._getPromMetricLabeled(txt, "sglang:prefill_effective_tokens_total", "mode", "host_hit") ?? 0) +
+      (this._getPromMetricLabeled(txt, "sglang:prefill_effective_tokens_total", "mode", "storage_hit") ?? 0);
+    return { computed, cached, total: computed + cached };
+  }
+
+  /**
+   * Cache split only — never recomputes generation/prefill from raw deltas and
+   * never writes `lastTokenCounts` (server_info owns that baseline on the polls
+   * where this path is selected, so touching it would mix two counter series).
+   * `_setPrefillSplitRates` keeps its own baseline, so no spike can occur.
+   * Selection is source-gated in probe(), so this path never clears prefillTps
+   * (see #99). Prefers cache_source="device" so HiCache L1/L2/L3 are not summed.
    */
   _applySglangPrefillSplit(txt, dtSec) {
+    const effective = this._sglangEffectivePrefill(txt);
+    if (effective != null) {
+      this._setPrefillSplitRates(effective.cached, effective.computed, dtSec, "effective");
+      return;
+    }
     const prompt =
       this._getPromMetric(txt, "sglang:prompt_tokens_total") ??
       this._getPromMetric(txt, "sglang_prompt_tokens_total");
     const cached = this._sglangCachedTokens(txt);
     if (cached != null && prompt != null) {
-      this._setPrefillSplitRates(cached, prompt, dtSec);
+      // prompt_tokens_total is the TOTAL prefill count (cache hits + computed).
+      // _setPrefillSplitRates expects DISJOINT counters, so pass the computed
+      // remainder — otherwise the hit rate and uncached rate are both inflated.
+      this._setPrefillSplitRates(cached, Math.max(0, prompt - cached), dtSec, "fallback");
     }
   }
 
@@ -1210,9 +1316,32 @@ export class LlmProbe {
         const res = await this._fetch(`${this.baseUrl}${path}`);
         if (!res.ok) continue;
         const data = await res.json();
-        const raw = data?.model_path || data?.tokenizer_path;
+        // served_model_name is the API-visible id clients must pass as `model`;
+        // fall back to the filesystem path only when the server omits it.
+        const served =
+          typeof data?.served_model_name === "string" && data.served_model_name.trim()
+            ? data.served_model_name
+            : typeof data?.model_alias === "string" && data.model_alias.trim()
+              ? data.model_alias
+              : null;
+        const localPath =
+          typeof data?.model_path === "string" && data.model_path.trim()
+            ? data.model_path
+            : typeof data?.tokenizer_path === "string" && data.tokenizer_path.trim()
+              ? data.tokenizer_path
+              : null;
+        const raw = served || localPath;
         if (!raw) continue;
         applyModelRef(this, raw);
+        // Keep the resolved on-disk path for display when it adds information
+        // beyond the served id (HF hub cache paths stay omitted as before).
+        if (served && localPath && !isHfHubCachePath(localPath) && localPath !== served) {
+          this.modelPath = localPath;
+        } else if (!served) {
+          this.modelPath = isHfHubCachePath(raw) ? null : raw;
+        } else {
+          this.modelPath = null;
+        }
         return;
       } catch {
         /* try next */

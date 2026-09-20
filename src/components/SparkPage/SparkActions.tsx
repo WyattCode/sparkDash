@@ -102,8 +102,8 @@ export function SparkActions({ spark, onEdit, className }: SparkActionsProps) {
             disabled={powerLoading}
             title={
               hermes.updateAvailable === true
-                ? `Run "hermes update" on this machine via SSH${
-                    hermes.behindCommits ? ` (${hermes.behindCommits} commits behind)` : ""
+                ? `通过 SSH 在此主机执行 hermes update${
+                    hermes.behindCommits ? `（落后 ${hermes.behindCommits} 个提交）` : ""
                   }`
                 : "查看 Hermes Agent 更新状态，并手动通过 SSH 更新此主机"
             }
@@ -120,7 +120,7 @@ export function SparkActions({ spark, onEdit, className }: SparkActionsProps) {
                 className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-warning px-1 text-[9px] font-bold leading-none text-white"
                 title={
                   hermes.behindCommits != null
-                    ? `${hermes.behindCommits} commit${hermes.behindCommits === 1 ? "" : "s"} behind`
+                    ? `落后 ${hermes.behindCommits} 个提交`
                     : "有可用更新"
                 }
               >

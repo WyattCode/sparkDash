@@ -22,7 +22,7 @@ export function percent(numerator: number | null, denominator: number | null): s
   return numerator == null || denominator == null || denominator < 0 ? '未采集' : `${Math.min(100, Math.max(0, numerator / denominator * 100)).toFixed(1)}%`;
 }
 export function sampleHint(samples: number | null): string {
-  return samples == null ? '样本计数不可用' : samples <= 0 ? '窗口内暂无样本' : `约 ${Math.round(samples)} 个观测样本${samples < 20 ? ' · 样本偏少' : ''}`;
+  return samples == null || !Number.isFinite(samples) || samples < 0 ? '样本计数不可用' : samples === 0 ? '窗口内暂无样本' : samples < 1 ? '不足 1 个观测样本（估算） · 样本偏少' : `约 ${Math.round(samples)} 个观测样本${samples < 20 ? ' · 样本偏少' : ''}`;
 }
 export function gpuReady(s: SparkSnapshot): boolean {
   const at = finite(s.telemetry?.updatedAt?.gpu);

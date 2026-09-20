@@ -170,7 +170,7 @@ export function LlmTrendChart({
           <span className="font-tabular text-xs text-text">{fmt(prefillAvg)}</span>
         </span>
         <span>
-          TTFT 平均值{" "}
+          首 Token 延迟均值{" "}
           <span className="font-tabular text-xs text-muted">
             {ttftAvg != null ? `${ttftAvg.toFixed(3)}s` : "—"}
           </span>

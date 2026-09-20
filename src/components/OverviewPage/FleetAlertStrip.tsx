@@ -7,7 +7,7 @@ function derive(sparks: SparkSnapshot[]): Alert[] {
   const alerts: Alert[] = [];
   for (const spark of sparks) {
     if (!spark.online) alerts.push({ key: `${spark.id}:offline`, spark, label: "主机无法访问", severity: "critical" });
-    if (spark.metrics.gpu?.throttle?.active) alerts.push({ key: `${spark.id}:throttle`, spark, label: `GPU throttled: ${spark.metrics.gpu.throttle.detail}`, severity: "critical" });
+    if (spark.metrics.gpu?.throttle?.active) alerts.push({ key: `${spark.id}:throttle`, spark, label: `GPU 降频：${spark.metrics.gpu.throttle.detail}`, severity: "critical" });
     if (spark.metrics.storage.some((disk) => disk.percentage >= 90)) alerts.push({ key: `${spark.id}:disk`, spark, label: "存储使用率达到或超过 90%", severity: "warning" });
     if (spark.llmMonitoring !== false && spark.metrics.llm.length > 0 && spark.metrics.llm.every((llm) => !llm.available)) alerts.push({ key: `${spark.id}:llm`, spark, label: "LLM 不可用", severity: "warning" });
     if (spark.tailscaleMonitoring && spark.metrics.tailscale && (!spark.metrics.tailscale.available || spark.metrics.tailscale.online === false)) alerts.push({ key: `${spark.id}:tailnet`, spark, label: "Tailnet 不可用", severity: "warning" });

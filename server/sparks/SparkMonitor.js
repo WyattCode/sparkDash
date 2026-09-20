@@ -10,6 +10,7 @@ import { HermesProbe } from "../collectors/HermesProbe.js";
 import { TailscaleProbe } from "../collectors/TailscaleProbe.js";
 import { llmDaily } from "../collectors/LlmDaily.js";
 import { sshExec } from "../collectors/ssh.js";
+import { classifyProbeError } from '../connectivityEvents.js';
 import {
   POLL_INTERVAL_GPU,
   POLL_INTERVAL_CPU,
@@ -39,6 +40,10 @@ export class SparkMonitor {
    */
   constructor(spark, options = {}) {
     this.spark = spark;
+    this._onConnectivity = options.onConnectivity;
+    this._connectivity = {phase:'initializing', lastSuccessAt:null, lastFailureAt:null, consecutiveFailures:0, lastError:null};
+    this._lastProbeEventAt = 0;
+    this._lastReportedOnline = null;
     this._onWolMac = typeof options.onWolMac === "function" ? options.onWolMac : null;
     this._onHermesChange =
       typeof options.onHermesChange === "function" ? options.onHermesChange : null;
@@ -153,6 +158,7 @@ export class SparkMonitor {
     this._metricCollectionSuccessful = { gpu: false, cpu: false };
     this.spark = spark;
     this.collector.spark = spark;
+    this._emitConnectivity('monitor_config_updated');
 
     // Rebuild LLM probe map — add new ports, remove stale ones, update existing
     const ports = this._llmMonitoringEnabled() ? this._llmPorts() : [];
@@ -402,6 +408,7 @@ export class SparkMonitor {
     this._runGeneration += 1;
     this._running = true;
     this._stopped = false;
+    this._emitConnectivity('monitor_start');
     this._poll();
     this._intervals.push(setInterval(() => this._pollDomain("gpu"), POLL_INTERVAL_GPU));
     this._intervals.push(setInterval(() => this._pollDomain("cpu"), POLL_INTERVAL_CPU));
@@ -420,6 +427,7 @@ export class SparkMonitor {
 
   /** Stop background polling. */
   stop() {
+    this._emitConnectivity('monitor_stop');
     this.collector.invalidatePendingCollections();
     this._runGeneration += 1;
     this._metricCollectionSuccessful = { gpu: false, cpu: false };
@@ -452,6 +460,7 @@ export class SparkMonitor {
       name: this.spark.name,
       kind: this.spark.kind || "spark",
       online: this.online,
+      connectivity: {...this._connectivity},
       telemetry: { updatedAt: { ...this._lastUpdate }, successful: { ...this._metricCollectionSuccessful } },
       uptime: this._uptimeSeconds,
       lanIp: this.spark.lanIp || "",
@@ -516,6 +525,35 @@ export class SparkMonitor {
   }
 
   // ─── Liveness ─────────────────────────────────────────────
+  _emitConnectivity(kind, extra = {}) {
+    try {
+      this._onConnectivity?.({source:'monitor',kind,node:this.spark.id,online:this.online,
+        target:this.spark.isLocal ? 'local' : (this.spark.ssh?.host || this.spark.lanIp),
+        ...this._connectivity,...extra});
+    } catch { /* Recording must never change the liveness decision. */ }
+  }
+
+  _noteProbe(error, beganAt) {
+    const now = Date.now(), old = this._connectivity;
+    if (error) {
+      const diagnostic = classifyProbeError(error);
+      this._connectivity = {...old,phase:'probe_failed',lastFailureAt:now,
+        consecutiveFailures:old.consecutiveFailures+1,lastError:diagnostic};
+      if (!old.consecutiveFailures || this._lastReportedOnline !== this.online ||
+          old.lastError?.category !== diagnostic.category || now-this._lastProbeEventAt >= 30000) {
+        this._emitConnectivity('probe_failure',{elapsedMs:now-beganAt});
+        this._lastProbeEventAt=now;
+      }
+    } else {
+      this._connectivity = {...old,phase:'online',lastSuccessAt:now,consecutiveFailures:0,lastError:null};
+      if (!old.lastSuccessAt || old.consecutiveFailures) {
+        this._emitConnectivity('probe_recovered',{elapsedMs:now-beganAt,previousFailures:old.consecutiveFailures});
+        this._lastProbeEventAt=now;
+      }
+    }
+    this._lastReportedOnline=this.online;
+  }
+
   async _checkOnline() {
     if (!this._running || this._inflight.online) return;
     const runGeneration = this._runGeneration;
@@ -524,6 +562,7 @@ export class SparkMonitor {
     const isCurrentRun = () =>
       this._running && this._runGeneration === runGeneration;
     const local = this.spark.isLocal;
+    const beganAt = Date.now();
     let uptimeSeconds = this._uptimeSeconds;
     try {
       if (local) {
@@ -549,12 +588,14 @@ export class SparkMonitor {
       this.online = true;
       this.lastOnlineOk = Date.now();
       this._uptimeSeconds = uptimeSeconds;
-    } catch {
+      this._noteProbe(null,beganAt);
+    } catch (error) {
       if (!isCurrentRun()) return;
       if (!this.lastOnlineOk || Date.now() - this.lastOnlineOk > ONLINE_GRACE_MS) {
         this.online = false;
         this._uptimeSeconds = null;
       }
+      this._noteProbe(error,beganAt);
     } finally {
       if (this._inflight.online === checkToken) {
         this._inflight.online = false;

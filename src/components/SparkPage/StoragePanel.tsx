@@ -71,7 +71,7 @@ function SettingsButton({
   return (
     <button
       type="button"
-      title={active ? "完成" : `${label} settings`}
+      title={active ? "完成" : `${label}设置`}
       onClick={onClick}
       disabled={disabled}
       className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted transition-colors hover:bg-surface-hover disabled:opacity-50 ${

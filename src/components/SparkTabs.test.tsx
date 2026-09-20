@@ -48,5 +48,18 @@ describe("SparkTabs accessibility and scale", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(document.querySelectorAll('[role="menuitem"]')).toHaveLength(14);
     expect(document.querySelector('#mobile-spark-menu [aria-current="page"]')?.textContent).toContain("Spark m3");
+    expect(document.activeElement?.textContent).toContain('Spark m3');
+    act(() => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true })));
+    expect(document.activeElement?.textContent).toContain('Spark m4');
+    act(() => document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })));
+    expect(document.querySelector('#mobile-spark-menu')).toBeNull();
+    expect(document.activeElement).toBe(toggle);
+    act(() => toggle.click());
+    const menu = document.querySelector('#mobile-spark-menu') as HTMLElement;
+    expect(menu.parentElement).toBe(document.body);
+    expect(parseFloat(menu.style.left)).toBe(0);
+    expect(parseFloat(menu.style.left) + parseFloat(menu.style.width)).toBeLessThanOrEqual(308);
+    act(() => toggle.click());
+    expect(document.querySelector('#mobile-spark-menu')).toBeNull();
   });
 });

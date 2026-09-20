@@ -16,24 +16,38 @@ export function useShowcaseAvailability(sparkId: string, enabled: boolean) {
   const [message, setMessage] = useState<string | null>('正在检查任务占用…');
   const [checking, setChecking] = useState(false);
   const revision = useRef(0);
-  const refresh = useCallback(async () => {
+  const inFlight = useRef<Promise<void> | null>(null);
+  const refresh = useCallback(() => {
+    // Do not invalidate a slow response on every polling tick.
+    if (inFlight.current) return inFlight.current;
     const ticket = ++revision.current;
     setChecking(true);
-    try {
-      const reason = await checkShowcaseAvailability(sparkId);
-      if (ticket === revision.current) setMessage(reason);
-    } catch {
-      if (ticket === revision.current) setMessage('任务状态暂不可用，请刷新状态后重试。');
-    } finally {
-      if (ticket === revision.current) setChecking(false);
-    }
+    const request = (async () => {
+      try {
+        const reason = await checkShowcaseAvailability(sparkId);
+        if (ticket === revision.current) setMessage(reason);
+      } catch {
+        if (ticket === revision.current) setMessage('任务状态暂不可用，请刷新状态后重试。');
+      } finally {
+        if (ticket === revision.current) {
+          inFlight.current = null;
+          setChecking(false);
+        }
+      }
+    })();
+    inFlight.current = request;
+    return request;
   }, [sparkId]);
   useEffect(() => {
-    if (!enabled) return;
-    setMessage('正在检查任务占用…');
-    void refresh();
-    const timer = setInterval(() => void refresh(), 15000);
-    return () => { ++revision.current; clearInterval(timer); };
+    let timer: ReturnType<typeof setInterval> | undefined;
+    if (enabled) {
+      setMessage('正在检查任务占用…');
+      void refresh();
+      timer = setInterval(() => void refresh(), 15000);
+    } else {
+      setChecking(false);
+    }
+    return () => { ++revision.current; inFlight.current = null; clearInterval(timer); };
   }, [enabled, refresh]);
   return { message, checking, refresh };
 }

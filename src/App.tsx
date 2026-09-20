@@ -11,7 +11,9 @@ import { OverviewPage } from "./components/OverviewPage/OverviewPage";
 import { ShowcasePage } from "./components/ShowcasePage/ShowcasePage";
 import { ThemeSwitch } from "./components/ThemeSwitch";
 import { SettingsDialog } from "./components/SettingsDialog";
-import { GearIcon, BoltIcon } from "./components/ui/icons";
+import { GearIcon } from "./components/ui/icons";
+import { BrandLink } from './components/ui/BrandLink';
+import { ShowcaseShortcut } from './components/ShowcaseShortcut';
 import { ConnectionBanner } from "./components/ui/ConnectionBanner";
 import { ErrorBanner } from "./components/ui/ErrorBanner";
 import { OVERVIEW_ID } from "./constants";
@@ -19,6 +21,7 @@ import type { SparkSnapshot } from "./api/types";
 import { isWorkerSpark } from "./api/sparkRole";
 import { useStartupPending } from "./hooks/useStartupPending";
 import { useDashboardSettings } from "./hooks/useDashboardSettings";
+import { useOverviewScrollbars } from './hooks/useOverviewScrollbars';
 
 /** Keep hidden worker ids in their original slots when the visible tabs are reordered. */
 function mergeTabOrderKeepingHidden(
@@ -186,6 +189,7 @@ function DashboardApp() {
 
 
   const isOverview = activeId === OVERVIEW_ID;
+  useOverviewScrollbars(isOverview);
   const hideWorkers = settings?.hideWorkers ?? false;
   const hiddenWorkerIds = useMemo(() => {
     if (!hideWorkers) return new Set<string>();
@@ -297,17 +301,7 @@ function DashboardApp() {
     <div className="app-frame min-h-screen text-text">
       <div className="dashboard-shell">
         <header className="dashboard-topbar flex flex-wrap items-center gap-3">
-          <a
-            href="/"
-            aria-label="sparkDash 首页并刷新"
-            title="返回首页并刷新页面"
-            className="logo-pill"
-          >
-            <BoltIcon className="h-3.5 w-3.5 text-accent" />
-            <span>
-              spark<span className="logo-pill-dash" translate="no">Dash</span>
-            </span>
-          </a>
+          <BrandLink />
           <SparkTabs
             sparks={tabSparks}
             activeId={displayActive?.id ?? activeId}
@@ -316,7 +310,7 @@ function DashboardApp() {
             onEdit={(id) => setEditId(id)}
             onReorder={handleReorder}
           />
-          <div className="ml-auto flex items-center gap-2.5">
+          <div className="dashboard-topbar-actions ml-auto flex items-center gap-2.5">
             <button
               type="button"
               onClick={() => setShowSettings(true)}
@@ -326,6 +320,7 @@ function DashboardApp() {
             >
               <GearIcon className="h-4 w-4" />
             </button>
+            <ShowcaseShortcut sparks={displaySparks} />
             <ThemeSwitch />
           </div>
         </header>
@@ -354,6 +349,7 @@ function DashboardApp() {
             <SparkPage
               spark={displayActive}
               temperatureUnit={settings?.temperatureUnit ?? "celsius"}
+              benchShareImage={settings?.benchShareImage ?? false}
               onEdit={() => setEditId(displayActive.id)}
             />
           ) : (

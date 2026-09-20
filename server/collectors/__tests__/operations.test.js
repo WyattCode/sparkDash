@@ -16,6 +16,18 @@ test('percentiles aggregate buckets by service and retain time window', () => {
   assert.match(QUERIES.httpTotal,/method="POST"/);
   assert.match(QUERIES.httpTotal,/completions/);
 });
+test('input throughput counts GPU prefill only, not prefix-cache hits', () => {
+  // mode="input" is the computed prefill counter; prompt_tokens_total mixes in
+  // cache hits and inflated the chart by orders of magnitude.
+  assert.match(QUERIES.prefill,/prefill_effective_tokens_total\{mode="input"\}/);
+  assert.doesNotMatch(QUERIES.prefill,/prompt_tokens_total/);
+});
+test('prefix cache hit rate divides cached tiers by total prefill', () => {
+  assert.match(QUERIES.cache,/prefill_effective_tokens_total\{mode=~"\.\+_hit"\}/);
+  assert.match(QUERIES.cache,/prefill_effective_tokens_total\[30m\]/);
+  // The old denominator used generation_tokens_total (output tokens).
+  assert.doesNotMatch(QUERIES.cache,/generation_tokens_total/);
+});
 test('history endpoint rejects unbounded client queries before fetching', async () => {
   const routes=new Map();registerOperationsRoutes({get:(path,handler)=>routes.set(path,handler)});
   let status=200;

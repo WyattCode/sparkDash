@@ -87,23 +87,23 @@ export const DECODE_BENCH_PROMPTS = {
 export const DECODE_BENCH_TYPE_META = [
   {
     id: "structured",
-    label: "Structured",
-    hint: "Count 1→200, numbers only — lab structured protocol",
+    label: "结构化",
+    hint: "计数 1→200，仅数字 — 实验结构化协议",
   },
   {
     id: "prose",
-    label: "Prose",
-    hint: "Hash-map explanation — lab default bench prompt",
+    label: "散文",
+    hint: "哈希表讲解 — 实验默认基准提示词",
   },
   {
     id: "code",
-    label: "Code",
-    hint: "clamp_00…clamp_49 Python helpers — code-shaped, no comments",
+    label: "代码",
+    hint: "clamp_00…clamp_49 Python 辅助函数 — 代码形态，无注释",
   },
   {
     id: "json",
     label: "JSON",
-    hint: "JSON GPU-metrics catalog — output type only, not guided JSON",
+    hint: "JSON GPU 指标目录 — 仅输出类型，非受控 JSON",
   },
 ];
 

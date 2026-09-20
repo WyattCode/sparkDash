@@ -1,0 +1,19 @@
+{
+  "id": "/",
+  "name": "sparkDash AI 集群监控",
+  "short_name": "sparkDash",
+  "description": "DGX Spark 集群实时监控与模型服务控制台，需要连接集群网络。",
+  "lang": "zh-CN",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#191919",
+  "theme_color": "#191919",
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icons/sparkdash-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/sparkdash-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icons/sparkdash-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

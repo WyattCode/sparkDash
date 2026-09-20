@@ -9,10 +9,16 @@ import {
 } from "../../api/client";
 import type { PrefillBenchJob, LlmBenchTarget } from "../../api/types";
 import { useModalPresence } from "../../hooks/useModalPresence";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { BenchCopyButton } from "./BenchCopyButton";
+import { buildPrefillShareCard } from "./benchShareCard";
 import {
   PREFILL_CONTEXT_SIZES,
   PREFILL_DEFAULT_CONTEXT_SIZES,
+  PREFILL_MAX_CONTEXT_SIZE,
+  PREFILL_MIN_CONTEXT_SIZE,
   formatContextSize,
+  parseContextSize,
 } from "../../shared/prefillBench.js";
 import { formatLlmBaseUrl } from "../../shared/llmTarget.js";
 
@@ -24,6 +30,10 @@ interface PrefillBenchDialogProps {
   modelId: string | null;
   contextLength: number | null;
   remoteTarget?: LlmBenchTarget | null;
+  /** Settings → Benchmark share image: the copy button also carries the card. */
+  shareImage?: boolean;
+  /** Unit display name for the share-card header. */
+  sparkName?: string | null;
 }
 
 function useEscape(onClose: () => void, enabled: boolean) {
@@ -147,15 +157,16 @@ export function PrefillBenchDialog({
   modelId,
   contextLength,
   remoteTarget = null,
+  shareImage = false,
+  sparkName = null,
 }: PrefillBenchDialogProps) {
   const [selected, setSelected] = useState<number[]>(() => defaultSelected(contextLength));
+  const [customDraft, setCustomDraft] = useState("");
   const [job, setJob] = useState<PrefillBenchJob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [loadingLast, setLoadingLast] = useState(false);
-  const [copied, setCopied] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const benchPort = remoteTarget?.port ?? llmPort;
 
   const stopPoll = useCallback(() => {
@@ -167,6 +178,7 @@ export function PrefillBenchDialog({
 
   const isRunning = job?.status === "running";
   const { mounted, visible } = useModalPresence(open);
+  const trapRef = useFocusTrap(mounted);
 
   useEscape(onClose, open && !starting);
   useBodyScrollLock(mounted);
@@ -227,6 +239,7 @@ export function PrefillBenchDialog({
   useEffect(() => {
     if (!open) {
       stopPoll();
+      setCustomDraft("");
       return;
     }
     let cancelled = false;
@@ -270,12 +283,6 @@ export function PrefillBenchDialog({
   }, [open, sparkId, benchPort, contextLength, startPolling, stopPoll]);
 
   useEffect(() => () => stopPoll(), [stopPoll]);
-  useEffect(
-    () => () => {
-      if (copyResetRef.current != null) clearTimeout(copyResetRef.current);
-    },
-    []
-  );
 
   const sizeFits = (n: number) =>
     contextLength == null || contextLength <= 0 || n <= contextLength;
@@ -291,12 +298,35 @@ export function PrefillBenchDialog({
     });
   };
 
+  const addCustomSize = () => {
+    if (isRunning || starting) return;
+    const n = parseContextSize(customDraft);
+    if (n == null) {
+      setError(
+        `自定义长度必须为 ${PREFILL_MIN_CONTEXT_SIZE.toLocaleString()}–${PREFILL_MAX_CONTEXT_SIZE.toLocaleString()} 之间的整数`
+      );
+      return;
+    }
+    if (!sizeFits(n)) {
+      setError(`自定义长度超出模型上下文（${contextLength?.toLocaleString()} Token）`);
+      return;
+    }
+    setError(null);
+    setSelected((prev) => (prev.includes(n) ? prev : [...prev, n].sort((a, b) => a - b)));
+    setCustomDraft("");
+  };
+
+  const customSizes = selected.filter((n) => !PREFILL_CONTEXT_SIZES.includes(n));
+
+  const startLockRef = useRef(false);
   const handleStart = async () => {
+    if (startLockRef.current) return;
     const sizes = selected.filter(sizeFits);
     if (sizes.length === 0) {
       setError("请至少选择一种模型支持的上下文长度");
       return;
     }
+    startLockRef.current = true;
     setStarting(true);
     setError(null);
     setJob(null);
@@ -314,6 +344,7 @@ export function PrefillBenchDialog({
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      startLockRef.current = false;
       setStarting(false);
     }
   };
@@ -333,30 +364,6 @@ export function PrefillBenchDialog({
     stopPoll();
     setJob(null);
     setError(null);
-  };
-
-  const handleCopyResults = async () => {
-    if (!job || job.results.length === 0) return;
-    const text = buildShareText(job, modelId);
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-      }
-      setCopied(true);
-      if (copyResetRef.current != null) clearTimeout(copyResetRef.current);
-      copyResetRef.current = setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setError("无法将结果复制到剪贴板");
-    }
   };
 
   const handleClear = async () => {
@@ -394,6 +401,7 @@ export function PrefillBenchDialog({
       <button
         type="button"
         className="bench-overlay__scrim"
+        tabIndex={-1}
         aria-label="关闭对话框"
         onClick={() => {
           if (!isRunning) onClose();
@@ -401,6 +409,8 @@ export function PrefillBenchDialog({
       />
 
       <div
+        ref={trapRef}
+        tabIndex={-1}
         className="bench-sheet"
         role="dialog"
         aria-modal="true"
@@ -414,7 +424,7 @@ export function PrefillBenchDialog({
             <p className="bench-sheet__subtitle">
               {remoteTarget
                 ? formatLlmBaseUrl(remoteTarget)
-                : `Port ${llmPort}`}
+                : `端口 ${llmPort}`}
               {modelId ? ` · ${modelId}` : ""}
             </p>
           </div>
@@ -438,7 +448,7 @@ export function PrefillBenchDialog({
               <div className="bench-field">
                 <div className="bench-field__head">
                   <h3 className="bench-sheet__section-title">上下文长度</h3>
-                  <p className="bench-sheet__hint">{ctxHint}</p>
+                  <p className="bench-sheet__hint">{ctxHint} 输入自定义 Token 数即可添加。</p>
                 </div>
                 <div className="bench-conc-grid" role="group" aria-label="上下文长度组">
                   {PREFILL_CONTEXT_SIZES.map((n: number) => {
@@ -461,6 +471,53 @@ export function PrefillBenchDialog({
                       </button>
                     );
                   })}
+                  {customSizes.map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      disabled={isRunning || starting}
+                      title={`${n.toLocaleString()} tokens — 点击移除`}
+                      onClick={() => toggleSize(n)}
+                      className="bench-conc-btn is-on"
+                    >
+                      {formatContextSize(n)}
+                    </button>
+                  ))}
+                </div>
+                <div className="bench-custom-size">
+                  <label htmlFor="prefill-custom-size" className="sr-only">
+                    自定义上下文长度（Token）
+                  </label>
+                  <input
+                    id="prefill-custom-size"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="[0-9]*"
+                    disabled={isRunning || starting}
+                    value={customDraft}
+                    placeholder="自定义"
+                    aria-label="自定义上下文长度（Token）"
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === "" || /^\d+$/.test(raw)) setCustomDraft(raw);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        addCustomSize();
+                      }
+                    }}
+                    className="bench-input"
+                    size={8}
+                  />
+                  <button
+                    type="button"
+                    className="bench-btn bench-btn--ghost"
+                    disabled={isRunning || starting || customDraft.trim() === ""}
+                    onClick={addCustomSize}
+                  >
+                    添加
+                  </button>
                 </div>
               </div>
             </section>
@@ -524,7 +581,7 @@ export function PrefillBenchDialog({
                     <span>上下文</span>
                     <span className="bench-results__head-speeds">
                       <span>预填充</span>
-                      <span>TTFT</span>
+                      <span>首 Token 延迟</span>
                     </span>
                   </div>
                   {job.results.map((r) => (
@@ -535,8 +592,8 @@ export function PrefillBenchDialog({
 
               {job.results.length > 0 && (
                 <p className="bench-legend">
-                  <strong>预填充</strong> — 提示词 Token 数 ÷ 首字延迟。{" "}
-                  <strong>TTFT</strong> — 请求开始到首个流式 Token 的时间。每种长度使用独立前缀，避免前缀缓存影响后续结果。
+                  <strong>预填充</strong> — 提示词 Token 数 ÷ 首 Token 延迟。{" "}
+                  <strong>首 Token 延迟</strong> — 请求开始到首个流式 Token 的时间。每种长度使用独立前缀，避免前缀缓存影响后续结果。
                 </p>
               )}
             </section>
@@ -565,14 +622,20 @@ export function PrefillBenchDialog({
                 </button>
               )}
               {job.results.length > 0 && (
-                <button
-                  type="button"
-                  className="bench-btn bench-btn--ghost"
-                  onClick={() => void handleCopyResults()}
-                  title="将纯文本摘要复制到剪贴板"
-                >
-                  {copied ? "已复制！" : "复制结果"}
-                </button>
+                <BenchCopyButton
+                  text={buildShareText(job, modelId)}
+                  buildCard={() =>
+                    buildPrefillShareCard(job, {
+                      llmPort: benchPort,
+                      modelId,
+                      sparkName,
+                      remoteHost: remoteTarget?.host ?? null,
+                    })
+                  }
+                  kind="prefill"
+                  shareImage={shareImage}
+                  onError={setError}
+                />
               )}
               <button type="button" className="bench-btn bench-btn--ghost" onClick={handleNewRun}>
                 新建运行

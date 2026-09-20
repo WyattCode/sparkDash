@@ -30,11 +30,13 @@ export function ConnectionBanner({
       ? `遥测数据已过期，上次有效更新在 ${age} 前。`
       : `实时遥测已断开，正在显示 ${age} 前的数据。`;
   } else if (!connected) {
-    message = "实时遥测已断开，正在等待首次有效更新…";
+    message = "正在连接实时遥测，等待首次有效更新…";
   }
 
   const announced = snapshotError
     ? "遥测数据错误。"
+    : lastValidSnapshotAt == null
+      ? "正在连接实时遥测。"
     : connected
       ? "遥测数据已过期。"
       : "实时遥测已断开。";

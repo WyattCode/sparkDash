@@ -57,7 +57,7 @@ export function TailscalePanel({ tailscale }: TailscalePanelProps) {
         {tailscale?.tailscaleIp && <Row label="IP" value={tailscale.tailscaleIp} tabular />}
         {tailscale?.hostName && <Row label="主机" value={tailscale.hostName} />}
         {tailscale?.relay && <Row label="中继" value={tailscale.relay} />}
-        {tailscale?.keyExpired && <Row label="密钥" value="EXPIRED — needs re-auth" danger />}
+        {tailscale?.keyExpired && <Row label="密钥" value="已过期 — 需重新认证" danger />}
         {tailscale?.version && <Row label="版本" value={tailscale.version} tabular />}
         {!available && !tailscale?.error && (
           <p className="text-xs text-muted">等待首次采集…</p>

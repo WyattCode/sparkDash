@@ -124,5 +124,5 @@ export function translateZhCN(value: string): string {
 
 export function installZhCN(): void {
   document.documentElement.lang = "zh-CN";
-  document.title = "sparkDash 双机监控";
+  document.title = "sparkDash AI 集群监控";
 }

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const exec = promisify(execFile);
-const MODEL = 'deepseek-v4-flash-vision-exp';
+const MODEL = 'deepseek-v4.1-flash';
 const BASE = 'http://127.0.0.1:8888';
 
 export async function productionBoot() {
@@ -21,13 +21,18 @@ export function recordCurrent(record, boot, model) {
 
 export function createServiceVerification({file, getSpark, snapshots, fetchImpl = fetch, getBoot = productionBoot, imageFile = process.env.SPARKDASH_VERIFICATION_IMAGE || '', nodeName = process.env.SPARKDASH_VERIFICATION_NODE || ''}) {
   let cache = null, pending = null, running = false, lastRun = 0;
+  function matchesModel(modelId) {
+    if (typeof modelId !== 'string' || !modelId.trim()) return false;
+    const id = modelId.trim().toLowerCase();
+    return id === MODEL || (id.split('/').filter(Boolean).pop() || '') === MODEL;
+  }
   function target() {
     if (!nodeName) return null;
     const candidates = snapshots().filter(s=>s.name===nodeName&&s.isLocal&&s.role==='head');
     const s = candidates.length === 1 ? candidates[0] : null;
-    const index = s?.metrics.llm.findIndex((l,i)=>l.modelId===MODEL&&(s.llmPorts?.[i]??s.llmPort)===8888) ?? -1;
+    const index = s?.metrics.llm.findIndex((l,i)=>matchesModel(l.modelId)&&(s.llmPorts?.[i]??s.llmPort)===8888) ?? -1;
     if (!s || index < 0) return null;
-    return {node:s.name, model:MODEL, port:8888, key:getSpark(s.id)?.llmApiKeys?.['8888'] || ''};
+    return {node:s.name, model:s.metrics.llm[index].modelId, port:8888, key:getSpark(s.id)?.llmApiKeys?.['8888'] || ''};
   }
   function readRecords() {
     try {
@@ -55,7 +60,7 @@ export function createServiceVerification({file, getSpark, snapshots, fetchImpl 
     try {
       const [anon,invalid,keyed] = await Promise.all([probe('/v1/models',''),probe('/v1/models','sparkdash-intentionally-invalid-key'),t.key?probe('/v1/models',t.key):Promise.resolve(null)]);
       auth.anonymous=anon.status;auth.invalid=invalid.status;auth.keyed=keyed?.status??null;
-      const listed = keyed?.data?.data?.some(m=>m.id===MODEL);
+      const listed = keyed?.data?.data?.some(m=>matchesModel(m.id));
       auth.status = anon.status===200 ? 'open' : [401,403].includes(anon.status)&&[401,403].includes(invalid.status)&&keyed?.status===200&&listed ? 'verified' : !t.key ? 'missing_key' : [401,403].includes(keyed?.status) ? 'rejected' : 'unavailable';
     } catch { /* explicit unavailable, never reuse an old success */ }
     const {records,storageError}=readRecords();
@@ -92,7 +97,7 @@ export function createServiceVerification({file, getSpark, snapshots, fetchImpl 
           if (!row?.metric?.instance?.endsWith(':8888') || !Array.isArray(row.value) || typeof row.value[1] !== 'string' || !row.value[1].trim() || !Number.isFinite(Number(row.value[1]))) throw unavailable();
           return {instance:row.metric.instance, value:Number(row.value[1])};
         }
-        const checks = await Promise.all(['vllm:num_requests_running','vllm:num_requests_waiting','up'].map(async name => {
+        const checks = await Promise.all(['sglang:num_running_reqs','sglang:num_queue_reqs','up'].map(async name => {
           const selector = `${name}{node=${JSON.stringify(t.node)},job="vllm"${name==='up'?'':`,model_name=${JSON.stringify(t.model)}`}}`;
           // timestamp() exposes the raw sample time; value[0] is query time.
           const [sample, stamp] = await Promise.all([query(selector),query(`timestamp(${selector})`)]);

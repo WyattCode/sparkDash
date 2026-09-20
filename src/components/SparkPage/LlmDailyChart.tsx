@@ -86,12 +86,12 @@ export function LlmDailyChart({
             const prefH = (pref / max) * (CHART_H - 2);
             const title = [
               d.date,
-              `decode peak ${fmt(d.decodeMax)} (avg ${fmt(d.decodeAvg)})`,
+              `解码峰值 ${fmt(d.decodeMax)}（均值 ${fmt(d.decodeAvg)}）`,
               hasSplit
-                ? `uncached prefill peak ${fmt(d.uncachedPrefillMax)} (avg ${fmt(d.uncachedPrefillAvg)})`
-                : `prefill peak ${fmt(d.prefillMax)} (avg ${fmt(d.prefillAvg)})`,
+                ? `未缓存预填充峰值 ${fmt(d.uncachedPrefillMax)}（均值 ${fmt(d.uncachedPrefillAvg)}）`
+                : `预填充峰值 ${fmt(d.prefillMax)}（均值 ${fmt(d.prefillAvg)}）`,
               hasSplit
-                ? `cached prefill peak ${fmt(d.cachedPrefillMax)} (avg ${fmt(d.cachedPrefillAvg)})`
+                ? `缓存预填充峰值 ${fmt(d.cachedPrefillMax)}（均值 ${fmt(d.cachedPrefillAvg)}）`
                 : null,
             ]
               .filter(Boolean)

@@ -76,7 +76,7 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
             {online && spark.uptime != null && (
               <span
                 className="metadata-tag shrink-0 rounded px-1.5 py-0.5 font-tabular text-[10px] font-medium"
-                title={`Uptime: ${formatUptime(spark.uptime)}`}
+                title={`运行时长：${formatUptime(spark.uptime)}`}
               >
                 {formatUptime(spark.uptime)}
               </span>
@@ -84,7 +84,7 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
             {hermes?.monitoring && hermes.installed && hermes.version && (
               <span
                 className="metadata-tag shrink-0 rounded px-1.5 py-0.5 font-tabular text-[10px] font-medium"
-                title={`Hermes Agent ${hermes.version} installed on this machine`}
+                title={`此主机已安装 Hermes Agent ${hermes.version}`}
               >
                 Hermes
               </span>

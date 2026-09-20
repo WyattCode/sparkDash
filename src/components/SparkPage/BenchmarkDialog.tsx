@@ -9,6 +9,9 @@ import {
 } from "../../api/client";
 import type { DecodeBenchJob, DecodeBenchPromptType, LlmBenchTarget } from "../../api/types";
 import { useModalPresence } from "../../hooks/useModalPresence";
+import { useFocusTrap } from "../../hooks/useFocusTrap";
+import { BenchCopyButton } from "./BenchCopyButton";
+import { buildDecodeShareCard } from "./benchShareCard";
 import { formatLlmBaseUrl } from "../../shared/llmTarget.js";
 import {
   DECODE_BENCH_DEFAULT_TYPE,
@@ -29,6 +32,10 @@ interface BenchmarkDialogProps {
   llmPort: number;
   modelId: string | null;
   remoteTarget?: LlmBenchTarget | null;
+  /** Settings → Benchmark share image: the copy button also carries the card. */
+  shareImage?: boolean;
+  /** Unit display name for the share-card header. */
+  sparkName?: string | null;
 }
 
 function useEscape(onClose: () => void, enabled: boolean) {
@@ -155,6 +162,8 @@ export function BenchmarkDialog({
   llmPort,
   modelId,
   remoteTarget = null,
+  shareImage = false,
+  sparkName = null,
 }: BenchmarkDialogProps) {
   const [selected, setSelected] = useState<number[]>([...DEFAULT_SELECTED]);
   const [maxTokensDraft, setMaxTokensDraft] = useState(String(DEFAULT_MAX_TOKENS));
@@ -163,9 +172,7 @@ export function BenchmarkDialog({
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
   const [loadingLast, setLoadingLast] = useState(false);
-  const [copied, setCopied] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const copyResetRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const benchPort = remoteTarget?.port ?? llmPort;
 
   const stopPoll = useCallback(() => {
@@ -178,6 +185,7 @@ export function BenchmarkDialog({
   const isRunning = job?.status === "running";
 
   const { mounted, visible } = useModalPresence(open);
+  const trapRef = useFocusTrap(mounted);
 
   useEscape(onClose, open && !starting);
   useBodyScrollLock(mounted);
@@ -293,13 +301,6 @@ export function BenchmarkDialog({
 
   useEffect(() => () => stopPoll(), [stopPoll]);
 
-  useEffect(
-    () => () => {
-      if (copyResetRef.current != null) clearTimeout(copyResetRef.current);
-    },
-    []
-  );
-
   const toggleConcurrency = (n: number) => {
     if (isRunning || starting) return;
     setSelected((prev) => {
@@ -311,7 +312,9 @@ export function BenchmarkDialog({
     });
   };
 
+  const startLockRef = useRef(false);
   const handleStart = async () => {
+    if (startLockRef.current) return;
     if (selected.length === 0) {
       setError("请至少选择一个并发档位");
       return;
@@ -321,6 +324,7 @@ export function BenchmarkDialog({
       setError("最大 Token 数必须是 64–2048 之间的整数");
       return;
     }
+    startLockRef.current = true;
     setStarting(true);
     setError(null);
     setJob(null);
@@ -340,6 +344,7 @@ export function BenchmarkDialog({
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
+      startLockRef.current = false;
       setStarting(false);
     }
   };
@@ -359,30 +364,6 @@ export function BenchmarkDialog({
     stopPoll();
     setJob(null);
     setError(null);
-  };
-
-  const handleCopyResults = async () => {
-    if (!job || job.results.length === 0) return;
-    const text = buildShareText(job, modelId);
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(text);
-      } else {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        ta.style.position = "fixed";
-        ta.style.opacity = "0";
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        document.body.removeChild(ta);
-      }
-      setCopied(true);
-      if (copyResetRef.current != null) clearTimeout(copyResetRef.current);
-      copyResetRef.current = setTimeout(() => setCopied(false), 1800);
-    } catch {
-      setError("无法将结果复制到剪贴板");
-    }
   };
 
   const handleClear = async () => {
@@ -417,6 +398,7 @@ export function BenchmarkDialog({
       <button
         type="button"
         className="bench-overlay__scrim"
+        tabIndex={-1}
         aria-label="关闭对话框"
         onClick={() => {
           if (!isRunning) onClose();
@@ -424,6 +406,8 @@ export function BenchmarkDialog({
       />
 
       <div
+        ref={trapRef}
+        tabIndex={-1}
         className="bench-sheet"
         role="dialog"
         aria-modal="true"
@@ -437,7 +421,7 @@ export function BenchmarkDialog({
             <p className="bench-sheet__subtitle">
               {remoteTarget
                 ? formatLlmBaseUrl(remoteTarget)
-                : `Port ${llmPort}`}
+                : `端口 ${llmPort}`}
               {modelId ? ` · ${modelId}` : ""}
             </p>
           </div>
@@ -645,14 +629,20 @@ export function BenchmarkDialog({
                 </button>
               )}
               {job.results.length > 0 && (
-                <button
-                  type="button"
-                  className="bench-btn bench-btn--ghost"
-                  onClick={() => void handleCopyResults()}
-                  title="将纯文本摘要复制到剪贴板"
-                >
-                  {copied ? "已复制！" : "复制结果"}
-                </button>
+                <BenchCopyButton
+                  text={buildShareText(job, modelId)}
+                  buildCard={() =>
+                    buildDecodeShareCard(job, {
+                      llmPort: benchPort,
+                      modelId,
+                      sparkName,
+                      remoteHost: remoteTarget?.host ?? null,
+                    })
+                  }
+                  kind="decode"
+                  shareImage={shareImage}
+                  onError={setError}
+                />
               )}
               <button type="button" className="bench-btn bench-btn--ghost" onClick={handleNewRun}>
                 新建运行

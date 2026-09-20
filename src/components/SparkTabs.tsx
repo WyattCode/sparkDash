@@ -1,4 +1,5 @@
-import { memo, useEffect, useMemo, useState, useRef, useCallback } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback } from "react";
+import { createPortal } from "react-dom";
 import {
   DndContext,
   DragOverlay,
@@ -13,7 +14,7 @@ import {
 import {
   SortableContext,
   arrayMove,
-  rectSortingStrategy,
+  horizontalListSortingStrategy,
   sortableKeyboardCoordinates,
   useSortable,
 } from "@dnd-kit/sortable";
@@ -176,7 +177,7 @@ function TabChrome({
         type="button"
         className="pill-handle"
         title="拖动以排序"
-        aria-label={`Reorder ${spark.name}`}
+        aria-label={`拖动排序 ${spark.name}`}
         {...dragHandleProps}
       >
         <GripIcon />
@@ -243,6 +244,25 @@ export function SparkTabs({
   const [activeDragId, setActiveDragId] = useState<string | null>(null);
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const menuAnchor = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+
+  // Only scroll the tab strip, never the document or the monitoring panel.
+  useEffect(() => {
+    const nav = navRef.current;
+    if (!nav || isMobile) return;
+    const reveal = () => {
+      const current = nav.querySelector('[aria-current="page"]');
+      if (!current) return;
+      const item = current.getBoundingClientRect(), box = nav.getBoundingClientRect();
+      if (item.left < box.left + 8) nav.scrollLeft += item.left - box.left - 8;
+      else if (item.right > box.right - 8) nav.scrollLeft += item.right - box.right + 8;
+    };
+    reveal();
+    const observer = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(reveal) : null;
+    observer?.observe(nav);
+    return () => observer?.disconnect();
+  }, [activeId, isMobile]);
 
   // Close mobile menu on resize to desktop
   useEffect(() => {
@@ -280,7 +300,7 @@ export function SparkTabs({
   // ── Mobile: hamburger + dropdown ────────────────────
   if (isMobile) {
     return (
-      <div className="mobile-menu-wrapper">
+      <div className="mobile-menu-wrapper" ref={menuAnchor}>
         <button
           type="button"
           className="icon-circle"
@@ -293,6 +313,7 @@ export function SparkTabs({
           <HamburgerIcon className="h-4 w-4" />
         </button>
         <MobileSparkMenu
+          anchorRef={menuAnchor}
           sparks={sparks}
           activeId={activeId}
           onSelect={onSelect}
@@ -331,7 +352,7 @@ export function SparkTabs({
 
   if (!canReorder) {
     return (
-      <nav className="pill-nav" aria-label="节点">
+      <nav ref={navRef} className="pill-nav" aria-label="节点">
         <OverviewTab isActive={activeId === OVERVIEW_ID} onSelect={onSelect} />
         {sparks.map((spark) => (
           <div key={spark.id} className="shrink-0">
@@ -356,12 +377,9 @@ export function SparkTabs({
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
     >
-      <nav className="pill-nav" aria-label="节点">
+      <nav ref={navRef} className="pill-nav" aria-label="节点">
         <OverviewTab isActive={activeId === OVERVIEW_ID} onSelect={onSelect} />
-        {/* rect (not horizontal-list) strategy: .pill-nav wraps onto several
-            rows once there are more Sparks than fit one line, and the
-            horizontal strategy only ever shifts items along X. */}
-        <SortableContext items={items} strategy={rectSortingStrategy}>
+        <SortableContext items={items} strategy={horizontalListSortingStrategy}>
           {ordered.map((spark) => (
             <SortableTab
               key={spark.id}
@@ -428,6 +446,7 @@ function OverviewTab({
 /* ─── Mobile dropdown menu ────────────────────────────── */
 
 function MobileSparkMenu({
+  anchorRef,
   sparks,
   activeId,
   onSelect,
@@ -435,6 +454,7 @@ function MobileSparkMenu({
   isOpen,
   onClose,
 }: {
+  anchorRef: React.RefObject<HTMLDivElement | null>;
   sparks: SparkSnapshot[];
   activeId: string | null;
   onSelect: (id: string) => void;
@@ -443,13 +463,36 @@ function MobileSparkMenu({
   onClose: () => void;
 }) {
   const menuRef = useRef<HTMLDivElement>(null);
+  const [position, setPosition] = useState<React.CSSProperties>({});
+  useLayoutEffect(() => {
+    if (!isOpen) return;
+    const place = () => {
+      const box = anchorRef.current?.getBoundingClientRect();
+      if (!box) return;
+      const width = Math.min(256, window.innerWidth - 24);
+      const top = Math.max(12, box.bottom + 12);
+      setPosition({ width, left: 0, top,
+        maxHeight: Math.max(44, window.innerHeight - top - 12) });
+    };
+    place();
+    const selected = menuRef.current?.querySelector<HTMLButtonElement>('[aria-current="page"]')
+      ?? menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]');
+    selected?.focus({ preventScroll: true });
+    window.addEventListener('resize', place);
+    window.addEventListener('scroll', place, true);
+    return () => {
+      window.removeEventListener('resize', place);
+      window.removeEventListener('scroll', place, true);
+    };
+  }, [isOpen, anchorRef]);
 
   const handleItemClick = useCallback(
     (id: string) => {
       onSelect(id);
       onClose();
+      anchorRef.current?.querySelector('button')?.focus({ preventScroll: true });
     },
-    [onSelect, onClose]
+    [onSelect, onClose, anchorRef]
   );
 
   const handleAddClick = useCallback(() => {
@@ -461,7 +504,7 @@ function MobileSparkMenu({
   useEffect(() => {
     if (!isOpen) return;
     const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node) && !anchorRef.current?.contains(e.target as Node)) {
         onClose();
       }
     };
@@ -471,22 +514,29 @@ function MobileSparkMenu({
       clearTimeout(id);
       document.removeEventListener("click", handler);
     };
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, anchorRef]);
 
-  // Close on Escape
-  useEffect(() => {
-    if (!isOpen) return;
-    const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", handler);
-    return () => document.removeEventListener("keydown", handler);
-  }, [isOpen, onClose]);
+  const handleMenuKey = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    const items = Array.from(menuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]') ?? []);
+    if (event.key === 'Escape' || event.key === 'Tab') {
+      if (event.key === 'Escape' || event.shiftKey) event.preventDefault();
+      event.stopPropagation();
+      onClose();
+      anchorRef.current?.querySelector('button')?.focus({ preventScroll: true });
+      return;
+    }
+    if (!items.length || !['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return;
+    event.preventDefault();
+    const index = items.indexOf(document.activeElement as HTMLButtonElement);
+    const next = event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1
+      : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length;
+    items[next].focus();
+  };
 
   if (!isOpen) return null;
 
-  return (
-    <div id="mobile-spark-menu" ref={menuRef} className="mobile-spark-menu" role="menu">
+  return createPortal(
+    <div id="mobile-spark-menu" ref={menuRef} style={position} className="mobile-spark-menu" role="menu" onKeyDown={handleMenuKey}>
       <button
         type="button"
         role="menuitem"
@@ -523,6 +573,6 @@ function MobileSparkMenu({
         <PlusIcon className="h-3.5 w-3.5" />
         添加 Spark／GPU 主机
       </button>
-    </div>
+    </div>, document.body
   );
 }

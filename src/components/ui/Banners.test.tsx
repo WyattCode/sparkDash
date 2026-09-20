@@ -5,6 +5,12 @@ import { ErrorBanner } from "./ErrorBanner";
 import { render } from "../../testing/render";
 
 describe("operator status banners", () => {
+  it('describes first connection as connecting, not disconnected', () => {
+    const { container } = render(<ConnectionBanner connected={false} lastValidSnapshotAt={null} snapshotError={null} now={5000} stale={false} />);
+    expect(container.textContent).toContain('正在连接实时遥测');
+    expect(container.textContent).not.toContain('已断开');
+    expect(container.textContent).not.toContain('0s');
+  });
   it("keeps last-known data explicitly disconnected and announces once without age chatter", () => {
     const { container } = render(
       <ConnectionBanner connected={false} lastValidSnapshotAt={10_000} snapshotError={null} now={25_000} stale={false} />

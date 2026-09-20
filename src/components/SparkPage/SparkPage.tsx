@@ -17,6 +17,8 @@ import { ChevronDownIcon } from "../ui/icons";
 interface SparkPageProps {
   spark: SparkSnapshot;
   temperatureUnit: "celsius" | "fahrenheit";
+  /** Show "Copy image" in the benchmark dialogs (Settings, off by default). */
+  benchShareImage?: boolean;
   onEdit?: () => void;
 }
 
@@ -77,7 +79,12 @@ function SectionHeading({
   );
 }
 
-export function SparkPage({ spark, temperatureUnit, onEdit }: SparkPageProps) {
+export function SparkPage({
+  spark,
+  temperatureUnit,
+  benchShareImage = false,
+  onEdit,
+}: SparkPageProps) {
   const { metrics } = spark;
   const [disabledDevices, setDisabledDevices] = useState<string[]>(spark.disabledDevices || []);
   const [disabledInterfaces, setDisabledInterfaces] = useState<string[]>(
@@ -203,9 +210,11 @@ export function SparkPage({ spark, temperatureUnit, onEdit }: SparkPageProps) {
         key={port}
         llm={llmMetrics}
         sparkId={spark.id}
+        sparkName={spark.name}
         llmPort={port}
         llmPorts={llmPorts}
         hasApiKey={Boolean(spark.llmApiKeyPorts?.includes(port))}
+        shareImage={benchShareImage}
         onRemovePort={canRemove ? handleRemovePort : undefined}
         className={className}
       />

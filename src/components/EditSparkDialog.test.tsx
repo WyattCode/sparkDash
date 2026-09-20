@@ -5,7 +5,7 @@ import { EditSparkDialog } from './EditSparkDialog';
 import { deleteSpark, fetchSparks, setSparkPassword, testSpark, testSparkConfig, updateSpark } from '../api/client';
 import type { SparkConfig, SparkTestResponse } from '../api/types';
 vi.mock('../api/client', () => ({deleteSpark:vi.fn(),fetchSparks:vi.fn(),setSparkPassword:vi.fn(),testSpark:vi.fn(),testSparkConfig:vi.fn(),updateSpark:vi.fn()}));
-const node: SparkConfig = {id:'head-a',name:'主节点',lanIp:'192.168.1.1',isLocal:false,ssh:{host:'192.168.1.1',user:'wyatt',auth:'pass',hasPassword:true},comfyMonitoring:true,comfyPort:8188};
+const node: SparkConfig = {id:'head-a',name:'主节点',lanIp:'192.168.1.1',isLocal:false,ssh:{host:'192.168.1.1',user:'fixture',auth:'pass',hasPassword:true},comfyMonitoring:true,comfyPort:8188};
 const result = {ok:true,capabilities:[]} as unknown as SparkTestResponse;
 const button = (text:string) => [...document.querySelectorAll('button')].find(b=>b.textContent===text)!;
 function input(selector:string,value:string){act(()=>{const el=document.querySelector(selector)!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));});}

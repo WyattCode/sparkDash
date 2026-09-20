@@ -330,7 +330,21 @@ export async function sshExec(spark, cmd, options = {}) {
       execFile(file, execArgs, { timeout: timeoutMs, env, maxBuffer: 10 * 1024 * 1024 }, (err, stdout, stderr) => {
         if (err) {
           const msg = stderr?.trim() || err.message;
-          reject(new Error(`SSH to ${targetHost} failed: ${msg}`));
+          const failure = new Error(`SSH to ${targetHost} failed: ${msg}`);
+          failure.probeDiagnostic = {
+            category: err.killed ? 'command_timeout' : /banner exchange/i.test(msg) ? 'ssh_banner_timeout'
+              : /timed? out|timeout/i.test(msg) ? 'timeout'
+              : /Permission denied/i.test(msg) ? 'authentication'
+              : /Host key verification|REMOTE HOST IDENTIFICATION/i.test(msg) ? 'host_key'
+              : /refused/i.test(msg) ? 'connection_refused'
+              : /reset|broken pipe/i.test(msg) ? 'connection_reset'
+              : /unreachable|No route/i.test(msg) ? 'unreachable' : 'ssh_failed',
+            exitCode: Number.isInteger(err.code) ? err.code : null,
+            signal: ['SIGTERM','SIGKILL'].includes(err.signal) ? err.signal : null,
+            timeoutMs,
+            stage: execArgs[execArgs.length - 1] === 'true' ? 'master_readiness' : 'command',
+          };
+          reject(failure);
         } else {
           resolve(String(stdout).trim());
         }

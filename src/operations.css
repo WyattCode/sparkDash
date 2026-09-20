@@ -44,8 +44,8 @@
 .app-frame .comparison-metric__label strong { font-size: var(--ui-metric-value); font-weight: 600; line-height: 1.4; color: var(--color-text-strong); }
 .app-frame .comparison-metric__track { height: 6px; }
 .app-frame .comparison-band__header p { font-size: 12px; }
-.app-frame .dashboard-shell { max-width: none; min-height: 100vh; margin: 0; padding: 0 24px 24px; border-radius: 0; background: var(--color-base); box-shadow: none; }
-.app-frame .dashboard-topbar { margin: 0 -24px 20px; background: var(--color-surface); }
+.app-frame .dashboard-shell { max-width: none; min-height: 100vh; margin: 0; padding: 0 var(--monitor-page-inset, 24px) 24px; border-radius: 0; background: var(--color-base); box-shadow: none; }
+.app-frame .dashboard-topbar { margin: 0 calc(-1 * var(--monitor-page-inset, 24px)) var(--monitor-page-top-gap, 20px); background: var(--color-surface); }
 .app-frame .dashboard-topbar .logo-pill { background: transparent; color: var(--color-text-strong); }
 .app-frame .dashboard-topbar .logo-pill-dash { color: inherit; }
 .app-frame .dashboard-topbar .pill-nav { background: transparent; }
@@ -118,8 +118,8 @@
 .ops-alerts button { color: var(--color-warning); border-color: var(--color-warning); }
 @media(max-width: 1000px) { .ops-grid { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 @media(max-width: 700px) {
-  .app-frame .dashboard-shell { padding: 0 12px 16px; }
-  .app-frame .dashboard-topbar { margin: 0 -12px 16px; }
+  .app-frame .dashboard-shell { padding: 0 var(--monitor-page-inset, 12px) 16px; }
+  .app-frame .dashboard-topbar { margin: 0 calc(-1 * var(--monitor-page-inset, 12px)) var(--monitor-page-top-gap, 16px); }
   .app-frame .overview-page { gap: 12px !important; }
   .app-frame .overview-card + .overview-card { margin-top: 0; }
   .app-frame .node-primary-metrics { grid-template-columns: 1fr; }

@@ -2,19 +2,28 @@
 import fs from 'node:fs';
 const BASE = process.env.SPARKDASH_PROMETHEUS_URL || 'http://127.0.0.1:9090';
 const group = 'node,instance,model_name';
-const httpFilter = 'job="vllm",handler=~"/v1/(chat/)?completions",method="POST"';
+// SGLang exposes request/response counters under the `endpoint` label (not
+// `handler`, which only exists on http_request_duration_seconds_*), and only
+// `sglang:http_responses_total` carries the `status_code` label needed for an
+// HTTP success rate. Always exclude /health from the "inference" scope.
+const httpScope = 'job="vllm",endpoint=~"/v1/(chat/)?completions",method="POST"';
 export const QUERIES = {
   up: 'up',
   age: 'time() - timestamp(up)',
-  output: `sum by (${group})(rate(vllm:generation_tokens_total[5m]))`,
-  prefill: `sum by (${group})(rate(vllm:prompt_tokens_total[5m]))`,
-  running: `sum by (${group})(vllm:num_requests_running)`,
-  waiting: `sum by (${group})(vllm:num_requests_waiting)`,
-  httpTotal: `sum by (node,instance)(increase(http_requests_total{${httpFilter}}[30m]))`,
-  httpOk: `sum by (node,instance)(increase(http_requests_total{${httpFilter},status=~"2.."}[30m]))`,
-  httpErrors: `sum by (node,instance,status)(increase(http_requests_total{${httpFilter},status=~"[45].."}[30m]))`,
-  finished: `sum by (${group},finished_reason)(increase(vllm:request_success_total[30m]))`,
-  cache: `sum by (${group})(rate(vllm:prefix_cache_hits_total[30m])) / sum by (${group})(rate(vllm:prefix_cache_queries_total[30m]))`,
+  output: `sum by (${group})(rate(sglang:generation_tokens_total[5m]))`,
+  // Input throughput = tokens the GPU actually prefilled (mode="input"). The
+  // older prompt_tokens_total also counts prefix-cache hits, which inflated the
+  // chart by orders of magnitude during cache-heavy traffic (no GPU work).
+  prefill: `sum by (${group})(rate(sglang:prefill_effective_tokens_total{mode="input"}[5m]))`,
+  running: `sum by (${group})(sglang:num_running_reqs)`,
+  waiting: `sum by (${group})(sglang:num_queue_reqs)`,
+  httpTotal: `sum by (node,instance)(increase(sglang:http_responses_total{${httpScope}}[30m]))`,
+  httpOk: `sum by (node,instance)(increase(sglang:http_responses_total{${httpScope},status_code=~"2.."}[30m]))`,
+  httpErrors: `sum by (node,instance,status_code)(increase(sglang:http_responses_total{${httpScope},status_code=~"[45].."}[30m]))`,
+  finished: `sum by (${group},finished_reason)(increase(sglang:num_requests_total[30m]))`,
+  // Hit rate = cached / (computed + cached). The previous denominator used
+  // generation_tokens_total (OUTPUT tokens), which is unrelated to prefill.
+  cache: `sum by (${group})(rate(sglang:prefill_effective_tokens_total{mode=~".+_hit"}[30m])) / sum by (${group})(rate(sglang:prefill_effective_tokens_total[30m]))`,
   power: 'DCGM_FI_DEV_POWER_USAGE',
   gpu: 'DCGM_FI_DEV_GPU_UTIL',
   temperature: 'DCGM_FI_DEV_GPU_TEMP',
@@ -23,8 +32,8 @@ export const QUERIES = {
   networkErrors: 'rate(node_network_receive_errs_total{device!~"lo|veth.*|docker.*|br-.*"}[5m]) + rate(node_network_transmit_errs_total{device!~"lo|veth.*|docker.*|br-.*"}[5m])',
   networkDrops: 'rate(node_network_receive_drop_total{device!~"lo|veth.*|docker.*|br-.*"}[5m]) + rate(node_network_transmit_drop_total{device!~"lo|veth.*|docker.*|br-.*"}[5m])',
 };
-for (const [key, name] of Object.entries({ttft: 'time_to_first_token', itl: 'inter_token_latency', e2e: 'e2e_request_latency', queue: 'request_queue_time'})) {
-  const metric = `vllm:${name}_seconds`;
+for (const [key, name] of Object.entries({ttft: 'time_to_first_token', itl: 'inter_token_latency', e2e: 'e2e_request_latency', queue: 'queue_time'})) {
+  const metric = `sglang:${name}_seconds`;
   QUERIES[key] = `histogram_quantile(0.95, sum by (${group},le)(rate(${metric}_bucket[30m])))`;
   QUERIES[`${key}Samples`] = `sum by (${group})(increase(${metric}_count[30m]))`;
 }
