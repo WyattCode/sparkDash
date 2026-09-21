@@ -27,7 +27,26 @@
   --color-muted: #a3a3a3;
 }
 [data-node-role="worker"] { --color-data: var(--color-chart-secondary); }
+/* Keep white-theme header controls quiet without changing other surfaces. */
+[data-theme="white"] :is(.dashboard-topbar, .sw-topbar) .icon-circle {
+  background: #fcfcfc;
+}
+[data-theme="white"] :is(.dashboard-topbar, .sw-topbar) .icon-circle:hover:not(:disabled) {
+  background: #f4f4f4;
+}
+[data-theme="white"] .dashboard-topbar :is(.pill-item, .pill-item-with-handle).is-active {
+  background: #f7f7f7;
+}
 .bg-data { background-color: var(--color-data); }
+[data-theme="light"] :is(.dashboard-topbar, .sw-topbar) .icon-circle {
+  background: #faf7f0;
+}
+[data-theme="light"] :is(.dashboard-topbar, .sw-topbar) .icon-circle:hover:not(:disabled) {
+  background: #f0ece2;
+}
+[data-theme="light"] .dashboard-topbar :is(.pill-item, .pill-item-with-handle).is-active {
+  background: #efebe2;
+}
 .text-data { color: var(--color-data); }
 .app-frame .comparison-metric__track span { background: var(--color-chart-primary); }
 .app-frame .comparison-metric__track span.is-worker { background: var(--color-chart-secondary); }

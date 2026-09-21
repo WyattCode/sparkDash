@@ -5,11 +5,11 @@
 /* matching the mockup's aesthetic. */
 :root,
 [data-theme="light"] {
-  --color-base: #c8c5be;
+  --color-base: #e5e0d7;
   --color-surface: #f5f2ea;
   --color-surface-elevated: #faf7f0;
   --color-surface-hover: #ece8de;
-  --color-border: #c8c2b4;
+  --color-border: #d0c9bb;
   --color-border-strong: #b8b0a0;
   --color-text: #1a1a18;
   --color-text-strong: #000000;
@@ -39,7 +39,7 @@
   --color-surface-glass: color-mix(in srgb, var(--color-surface) 72%, transparent);
   --color-card-glass: color-mix(in srgb, #ffffff 55%, transparent);
 
-  --body-gradient: linear-gradient(160deg, #c5c3bc 0%, #c2bfb6 40%, #ccc8be 100%);
+  --body-gradient: linear-gradient(160deg, #e5e0d7 0%, #e2dcd2 40%, #e9e3da 100%);
   --shell-gradient: linear-gradient(180deg, var(--color-surface) 0%, #ede8da 100%);
 }
 
@@ -79,12 +79,12 @@
 
 /* ─── White theme (neutral, no warm tones) ──────────────── */
 [data-theme="white"] {
-  --color-base: #c8c8c8;
-  --color-surface: #f5f5f5;
-  --color-surface-elevated: #ffffff;
-  --color-surface-hover: #ebebeb;
-  --color-border: #d4d4d4;
-  --color-border-strong: #c0c0c0;
+  --color-base: #fafafa;
+  --color-surface: #ffffff;
+  --color-surface-elevated: #f7f7f7;
+  --color-surface-hover: #f0f0f0;
+  --color-border: #e2e2e2;
+  --color-border-strong: #c8c8c8;
   --color-text: #1a1a1a;
   --color-text-strong: #000000;
   --color-muted: #5a5a5a;
@@ -111,8 +111,8 @@
   --color-surface-glass: color-mix(in srgb, var(--color-surface) 72%, transparent);
   --color-card-glass: color-mix(in srgb, #ffffff 55%, transparent);
 
-  --body-gradient: linear-gradient(160deg, #c8c8c8 0%, #c4c4c4 40%, #cccccc 100%);
-  --shell-gradient: linear-gradient(180deg, var(--color-surface) 0%, #ececec 100%);
+  --body-gradient: linear-gradient(#fafafa, #fafafa);
+  --shell-gradient: linear-gradient(#ffffff, #ffffff);
 }
 
 /* ─── OLED theme (pure black, max contrast) ───────────── */
