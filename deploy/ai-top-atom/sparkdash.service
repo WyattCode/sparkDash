@@ -1,0 +1,22 @@
+[Unit]
+Description=sparkDash monitoring dashboard
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/wyatt/sparkDash
+ExecStart=/home/wyatt/.local/opt/node/bin/node server/index.js
+Environment=NODE_ENV=production
+Environment=BIND_HOST=0.0.0.0
+Environment=SPARKDASH_ALLOW_OPEN_REMOTE=1
+Environment=PORT=5555
+Environment=LLM_PORT=8888
+Environment=HOST_SYS_PATH=/sys
+Environment=HOST_ROOT_PATH=/
+Environment=PATH=/home/wyatt/.local/opt/node/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+Restart=always
+RestartSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target

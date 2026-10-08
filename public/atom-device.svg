@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 60 180" fill="none" stroke="white" stroke-linejoin="round">
+<!-- Front-face drawing rotated within the existing silhouette; chassis layout is unchanged. -->
+<defs>
+ <clipPath id="grille"><rect x="4" y="4" width="172" height="52" rx="1"/></clipPath>
+ <pattern id="mesh" width="3" height="3" patternUnits="userSpaceOnUse"><path d="M1 0V3M0 1H3" stroke-width=".3"/></pattern>
+</defs>
+<g transform="translate(60 0) rotate(90)">
+ <rect x="3" y="3" width="174" height="54" rx="1.5" stroke-width=".7" opacity=".65"/>
+ <g clip-path="url(#grille)">
+  <!-- Fine rear mesh remains subordinate to the ribs. -->
+  <rect x="4" y="4" width="172" height="52" fill="url(#mesh)" stroke="none" opacity=".22"/>
+  <!-- Broad, repeating wave ribs behind the straight front grille. -->
+  <g stroke-width=".75" opacity=".6">
+   <path d="M0 -5C20 -5 28 37 51 37S77 -7 99 -7 123 32 145 32 166 14 180 11"/>
+   <path d="M0 1C20 1 28 43 51 43S77 -1 99 -1 123 38 145 38 166 20 180 17"/>
+   <path d="M0 7C20 7 28 49 51 49S77 5 99 5 123 44 145 44 166 26 180 23"/>
+   <path d="M0 13C20 13 28 55 51 55S77 11 99 11 123 50 145 50 166 32 180 29"/>
+   <path d="M0 19C20 19 28 61 51 61S77 17 99 17 123 56 145 56 166 38 180 35"/>
+  </g>
+  <!-- Straight, closely spaced horizontal grille rails sit in front. -->
+  <path d="M4 6H176M4 11H176M4 16H176M4 21H176M4 26H176M4 31H176M4 36H176M4 41H176M4 46H176M4 51H176M4 56H176" stroke-width=".85" opacity=".9"/>
+ </g>
+ <path d="M4 58H176" stroke-width=".6" opacity=".65"/>
+ <text x="145" y="55" font-family="Arial,sans-serif" font-size="4.6" font-weight="700" letter-spacing=".12" stroke="none" fill="white" opacity=".85">GIGABYTE</text>
+</g>
+</svg>
