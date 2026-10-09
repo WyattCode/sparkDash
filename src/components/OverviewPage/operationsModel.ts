@@ -1,6 +1,7 @@
 import type { SparkSnapshot } from '../../api/types';
 export interface Series { labels: Record<string, string>; points: [number, number | null][] }
 export interface Operations {
+  expectedTargets?: {node:string;job:string}[]|null;
   generatedAt: number; startedAt: number; windowMinutes: number;
   metrics: Record<string, {series: Series[]; error: string | null}>;
   targets: {labels: Record<string, string>; health: string; lastScrape: string}[];
@@ -42,4 +43,15 @@ export function nodeIssues(s: SparkSnapshot): string[] {
   if (s.metrics.storage.some(d => !d.disabled && d.percentage >= 90)) issues.push('磁盘空间不足');
   if (s.role !== 'worker' && !s.workerNode && s.llmMonitoring !== false && !s.metrics.llm.some(l => l.available)) issues.push('模型 API 探测不可用');
   return issues;
+}
+
+export function missingExpectedTargets(sparks: SparkSnapshot[], data: Operations | null): string[] {
+  if (!data || data.targetError) return [];
+  if (Array.isArray(data.expectedTargets)) {
+    return data.expectedTargets.filter(e=>!data.targets.some(t=>t.labels.node===e.node&&t.labels.job===e.job)).map(e=>`${e.node} / ${e.job}`);
+  }
+  return sparks.flatMap(s=> {
+    const jobs=['node',...(s.kind==='host'?[]:['dcgm']),...(s.role==='head'&&s.metrics.llm.some(l=>l.backend==='vllm')?['vllm','vllm-config']:[])];
+    return jobs.filter(job=>!data.targets.some(t=>t.labels.node===s.name&&t.labels.job===job)).map(job=>`${s.name} / ${job}`);
+  });
 }

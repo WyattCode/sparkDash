@@ -3,10 +3,11 @@ export interface VerificationRecord {
   passed?:number; total?:number; durationMs?:number;
 }
 export interface Verification {
-  checkedAt:number; supported:boolean; reason?:string; node?:string; port?:number; model?:string; boot?:string|null;
+  checkedAt:number; supported:boolean; reason?:string|null; node?:string; port?:number; model?:string; boot?:string|null;
   running?:boolean; storageError?:string|null;
   auth?:{status:string;anonymous:number|null;invalid:number|null;keyed:number|null};
   inference?:VerificationRecord|null; warmup?:VerificationRecord|null; vision?:VerificationRecord|null;
+  canVerify?:boolean;
   current?:{inference:boolean;warmup:boolean;vision:boolean};
 }
 export function recordLabel(r:VerificationRecord|null|undefined,current:boolean|undefined,kind:string) {

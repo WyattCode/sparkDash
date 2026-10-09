@@ -27,12 +27,11 @@ export function createServiceVerification({file, getSpark, snapshots, fetchImpl 
     return id === MODEL || (id.split('/').filter(Boolean).pop() || '') === MODEL;
   }
   function target() {
-    if (!nodeName) return null;
-    const candidates = snapshots().filter(s=>s.name===nodeName&&s.isLocal&&s.role==='head');
+    const candidates = snapshots().filter(s=>s.isLocal&&s.role==='head'&&(nodeName?s.name===nodeName:s.metrics.llm.some(l=>l.backend==='tensorfold')));
     const s = candidates.length === 1 ? candidates[0] : null;
-    const index = s?.metrics.llm.findIndex((l,i)=>matchesModel(l.modelId)&&(s.llmPorts?.[i]??s.llmPort)===8888) ?? -1;
+    const index = s?.metrics.llm.findIndex((l,i)=>(matchesModel(l.modelId)||l.backend==='tensorfold')&&(s.llmPorts?.[i]??s.llmPort)===8888) ?? -1;
     if (!s || index < 0) return null;
-    return {node:s.name, model:s.metrics.llm[index].modelId, port:8888, key:getSpark(s.id)?.llmApiKeys?.['8888'] || ''};
+    return {node:s.name, model:s.metrics.llm[index].modelId, port:8888, backend:s.metrics.llm[index].backend, key:getSpark(s.id)?.llmApiKeys?.['8888'] || ''};
   }
   function readRecords() {
     try {
@@ -60,11 +59,11 @@ export function createServiceVerification({file, getSpark, snapshots, fetchImpl 
     try {
       const [anon,invalid,keyed] = await Promise.all([probe('/v1/models',''),probe('/v1/models','sparkdash-intentionally-invalid-key'),t.key?probe('/v1/models',t.key):Promise.resolve(null)]);
       auth.anonymous=anon.status;auth.invalid=invalid.status;auth.keyed=keyed?.status??null;
-      const listed = keyed?.data?.data?.some(m=>matchesModel(m.id));
+      const listed = keyed?.data?.data?.some(m=>m.id===t.model||(t.backend!=='tensorfold'&&matchesModel(m.id)));
       auth.status = anon.status===200 ? 'open' : [401,403].includes(anon.status)&&[401,403].includes(invalid.status)&&keyed?.status===200&&listed ? 'verified' : !t.key ? 'missing_key' : [401,403].includes(keyed?.status) ? 'rejected' : 'unavailable';
     } catch { /* explicit unavailable, never reuse an old success */ }
     const {records,storageError}=readRecords();
-    return {checkedAt:Date.now(),supported:true,node:t.node,port:t.port,model:t.model,boot,auth,storageError,running,
+    return {checkedAt:Date.now(),supported:true,node:t.node,port:t.port,model:t.model,boot,auth,storageError,running,canVerify:!!boot&&auth.status==='verified',reason:!boot?'服务未提供可核验的启动标识，暂无实测验收记录':null,
       inference:records.inference||null,warmup:records.warmup||null,vision:records.vision||null,
       current:{inference:recordCurrent(records.inference,boot,t.model),warmup:recordCurrent(records.warmup,boot,t.model),vision:recordCurrent(records.vision,boot,t.model)}};
   }

@@ -25,3 +25,14 @@ describe('operations metric semantics',()=>{
     expect(metricValue(data,'ttft','head','a')).toBe(2);
   });
 });
+
+// Explicit native collectors do not imply optional Prometheus exporters.
+it('checks only declared exporter targets when native hardware collection is active', async () => {
+  const {missingExpectedTargets}=await import('./operationsModel');
+  const data={targetError:null,expectedTargets:[],targets:[]} as unknown as import('./operationsModel').Operations;
+  expect(missingExpectedTargets([],data)).toEqual([]);
+  data.expectedTargets=[{node:'head',job:'node'}];
+  expect(missingExpectedTargets([],data)).toEqual(['head / node']);
+  data.targets=[{labels:{node:'head',job:'node'},health:'down',lastScrape:''}];
+  expect(missingExpectedTargets([],data)).toEqual([]);
+});

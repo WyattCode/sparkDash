@@ -325,7 +325,7 @@ const server = createServer(app);
 app.use(express.json());
 app.use(createAuthMiddleware());
 connectivityEvents.register(app);
-registerOperationsRoutes(app, orderedSnapshots, path.join(ROOT, 'config', 'operations-events.json'));
+registerOperationsRoutes(app, orderedSnapshots, path.join(ROOT, 'config', 'operations-events.json'), id=>registry.getSpark(id));
 registerVerificationRoutes(app, {snapshots:orderedSnapshots,getSpark:id=>registry.getSpark(id),file:path.join(ROOT,'config','service-verification.json')});
 
 app.get("/api/health", (_req, res) => {

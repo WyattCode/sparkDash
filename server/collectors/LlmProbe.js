@@ -1,3 +1,4 @@
+import { parseTensorfoldMetrics } from "./tensorfoldMetrics.js";
 /**
  * LlmProbe — probes an LLM server on port 8888, auto-detects backend,
  * computes live tokens/sec (generation + prefill).
@@ -361,12 +362,13 @@ export class LlmProbe {
   /**
    * Classify an OpenAI-compatible server: ds4, SGLang, EXL3, q27, or vLLM (default).
    * @param {unknown} ownedBy
-   * @returns {Promise<"ds4" | "sglang" | "exl3" | "q27" | "vllm">}
+   * @returns {Promise<"ds4" | "sglang" | "exl3" | "tensorfold" | "q27" | "vllm">}
    */
   async _classifyOpenAIBackend(ownedBy) {
     if (typeof ownedBy === "string") {
       if (/ds4/i.test(ownedBy)) return "ds4";
       if (/sglang/i.test(ownedBy)) return "sglang";
+      if (/tensorfold/i.test(ownedBy)) return "tensorfold";
       if (/exl3/i.test(ownedBy)) return "exl3";
       // q27's /v1/models reports owned_by: "q27" (signalnine/q27 engine).
       if (/q27/i.test(ownedBy)) return "q27";
@@ -501,27 +503,42 @@ let modelsOk = false;
       if (/ds4/i.test(owned)) this.backendType = "ds4";
       else if (/sglang/i.test(owned) && this.backendType !== "ds4") {
         this.backendType = "sglang";
+      } else if (/tensorfold/i.test(owned) && this.backendType !== "ds4") {
+        this.backendType = "tensorfold";
       } else if (/exl3/i.test(owned) && this.backendType !== "ds4") {
         this.backendType = "exl3";
       }
     }
 
     // EXL3 serve_openai.py: live tok/s from /health cumulative counters (no Prometheus).
-    if (this.backendType === "exl3" || this.backendType == null) {
+    if (this.backendType === "exl3" || this.backendType === "tensorfold" || this.backendType == null) {
       try {
         const healthRes = await this._fetch(`${this.baseUrl}/health`);
         if (healthRes.ok) {
           const health = await healthRes.json().catch(() => null);
           if (LlmProbe._healthLooksLikeExl3(health)) {
-            this.backendType = "exl3";
+            this.backendType = health.backend === "tensorfold" ? "tensorfold" : "exl3";
             this._applyExl3Health(health, dtSec);
+            if (this.backendType === "tensorfold") {
+              try {
+                const res = await this._fetch(`${this.baseUrl}/metrics`);
+                if (res.ok) {
+                  const m = parseTensorfoldMetrics(await res.text());
+                  this.requestsRunning = m.running ?? this.requestsRunning; this.requestsWaiting = m.waiting;
+                  this.slotsActive = this.requestsRunning;
+                  this.ttftP95Seconds = m.ttft; this.e2eP95Seconds = m.e2e;
+                  this.prefixCacheHitRate = m.cache; this.mtpAcceptanceRate = m.mtp;
+                  this.kvCacheUsage = m.kv == null ? null : Math.min(100, m.kv * 100);
+                }
+              } catch { /* Optional metrics must not hide the healthy model. */ }
+            }
             return this._getSnapshot();
           }
         }
       } catch {
         /* health optional unless already classified exl3 */
       }
-      if (this.backendType === "exl3") return this._getSnapshot();
+      if (this.backendType === "exl3" || this.backendType === "tensorfold") return this._getSnapshot();
     }
 
     // SGLang: native info endpoints. Skip on known vLLM/ds4 to avoid 404 spam.
@@ -808,9 +825,9 @@ let modelsOk = false;
     const ctx = Number(data?.context_length);
     if (Number.isFinite(ctx) && ctx > 0) this.contextLength = Math.round(ctx);
 
-    this.requestsRunning = busy ? 1 : 0;
-    this.slotsActive = busy ? 1 : 0;
-    this.slotsTotal = 1;
+    this.requestsRunning = Number.isInteger(data.requests_running) && data.requests_running >= 0 ? data.requests_running : busy ? 1 : 0;
+    this.slotsActive = this.requestsRunning;
+    this.slotsTotal = Number.isInteger(data.streams?.max) && data.streams.max > 0 ? data.streams.max : 1;
     this.kvCacheUsage = null;
     this.requestsWaiting = null;
     this.ttftP95Seconds = null;

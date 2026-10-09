@@ -153,3 +153,52 @@ npm run build -- --outDir /tmp/sparkdash-source-build
 复核范围包括本轮全部本地改动，以及相关运行、配置、恢复与采集路径。已构建的第三方前端没有完整对应源码，无法据此宣称完成该产物所有内部代码路径的源码审计；仓库测试同样不覆盖用户不可获得的那部分源码。后续源码对齐仍按上文版本边界处理。
 
 本轮最终验证日志保存在本机 `/tmp/sparkdash-final-{typecheck,tests,build,browser}.log`，临时目录可能被清理，不能将日志当作持久交付件。文档中的结果和快照清单是交接记录。最终复核后的改动及本交接记录包含在同一 Git 提交中。
+
+## TensorFold 兼容修复（2026-10-09，后续变更）
+
+本节覆盖前文对应状态：服务仍在当前改版分支基础上，后端增加 TensorFold 原生指标适配；前端快照更新至 `index-atom-0c675dbe98.js`。此批修复尚未提交/推送 GitHub，上一轮提交 897d9b6 不包含本节修复。
+
+问题根因：`.233` 生产界面的模型服务区域只读取 SGLang/Prometheus 窗口指标；鉴权/验收适配器还硬编码 DeepSeek、固定节点名。当前后端实际是 TensorFold，不能继续将其按旧 EXL3 单槽或 SGLang 服务解释。
+
+- `server/collectors/tensorfoldMetrics.js` 解析原生 `/metrics`，校验直方图单调性及 +Inf/count 一致；缺失、非有限或无样本值不伪造为零。缓存比例为 cached_tokens_total / prompt_tokens_total，校验不超过 100%。
+- `LlmProbe.js` 识别 health.backend=tensorfold，保留实际 requests_running 和 streams.max，多路请求不再压缩成 busy=1。原有 EXL3 路径继续可用。
+- `server/operations.js` 通过配置中的本机模型端口读取原生指标，按节点/模型/端口绑定，兼容前端既有 series 数据格式。仅 TensorFold 的部署不依赖 Prometheus；其他后端仍走原适配。鉴权密钥仅用于服务端请求头，不进入 API 输出。
+- `server/serviceVerification.js` 默认自动匹配唯一的本机 TensorFold Head 及实际模型；GET 仅探测模型列表的匿名/错误密钥/有效密钥状态，不发推理请求。现服务缺少可核验的启动标识，返回 canVerify=false，独立验收按钮禁用，并说明原因。
+- 源码 `OperationsPanel.tsx` 和生产构建文件同步改文案及逻辑。`deploy/ai-top-atom/patch-tensorfold-ui.py` 记录针对保留构建产物的精确补丁；输入不匹配会退出。当前快照已包含结果，正常恢复不需要重复运行该补丁。它并未消除 `.233` 源码缺失的限制。
+
+| 展示 | 当前数据口径 |
+| --- | --- |
+| 处理中 / 排队中 | 原生 requests_running / requests_waiting，即时请求数 |
+| 首 Token 延迟 P95、总耗时 P95 | 服务端累计直方图估算分位数及实际样本数；范围为服务启动以来，不宣称过去 30 分钟 |
+| 前缀缓存命中率 | 服务启动以来的缓存 Token / 输入 Token，不是请求命中比例 |
+| HTTP 成功率、Token 间延迟、排队延迟 | 当前服务未暴露相应指标；明确显示“后端未提供”及原因，不拿健康探测、总请求数或 TTFT 减法拼出结果 |
+| 鉴权 | 显示真实模型列表探测结果；当前匿名和错误密钥均 HTTP 200，状态为接口未受保护 |
+| 独立推理/预热/图像验收 | 尚未执行或导入，不把 API 可达、指标存在当成验收通过；未自动向忙碌模型发起测试 |
+
+验证：后端 388/388、前端 235/235 通过；类型检查、分支源码隔离构建通过；浏览器实测运行/排队、P95、缓存比例及鉴权均正常呈现，1440/768/390px 无横向溢出，主题框高度保持不变，无 pageerror。更新后的 11 个线上静态资源与快照逐一校验一致，并在隔离目录验证恢复成功。
+
+本节修复没有更改模型配置或重启 TensorFold 推理服务；仅重启看板用户服务。后端 HTTP/ITL/排队延迟的完整支持仍需要推理服务先提供对应状态计数或直方图。不要把“后端未提供”改为 0 或 100% 来消除提示。
+
+### 最终显示规则修正
+
+用户要求：后端不提供的项目直接隐藏，不展示“不支持/未提供”占位。当前 TensorFold 隐藏 HTTP 成功率、Token 间延迟和排队延迟；没有记录时隐藏推理/预热及图像验收卡片，没有可用记录的 TensorFold 服务也隐藏空的验收/请求详情区域。运行/排队、TTFT/E2E、缓存比例和鉴权保留。源码与已构建前端同步，`hide-unsupported-ui.py` 记录构建补丁，快照已更新至 `index-atom-628b63cb0a.js`；本节替代前文关于展示“后端未提供”的规则。浏览器已验证这些卡片不在 DOM 中，多尺寸无溢出/脚本异常。
+
+鉴权展示补充：用户要求隐藏“接口未受保护”所在的鉴权状态卡片，已同步移除源码展示并禁用生产前端卡片；仅隐藏 UI，未关闭后台鉴权探测，也未改变模型接口访问权限。快照已更新至 `index-atom-7e6b6e4242.js`。
+
+### 原生采集目标误报修正
+
+在纯 TensorFold/本机与 SSH 采集部署中，operations 返回 expectedTargets=[]，界面只检查明确声明的 exporter 目标；不再强制每台设备必须部署 node-exporter/DCGM。未声明 expectedTargets 的旧 Prometheus 模式保留原检查；声明了目标但不存在仍会报错，没有把 down 状态伪装正常。鉴权卡片及其匿名/错误密钥/有效密钥说明已从生产代码中移除。前端快照更新至 `index-atom-798ca99050.js`，补丁记录于 `fix-native-targets-ui.py`。浏览器确认鉴权明细和 node/DCGM 缺失误报均消失，双机在线与 GPU 状态保留。
+
+### 最新二次代码复核（2026-10-09）
+
+发现并修复三个边界问题：原生采集模式判断不再依赖模型当前 available 状态，模型离线会产生 down 目标及模型 API 异常，不会被重新归类为缺少 exporters；原生模式跳过 Prometheus 前确认所有被监控服务均为 TensorFold，混合后端仍保留原查询；多个 KV 池的比例不直接相加，缺少合法总量时返回 null。TensorFold 可直接通过 owned_by 识别；原生 metrics 缺少运行请求数时保留 health 提供的真实请求数，并同步 slotsActive。
+
+后端 391/391、前端 236/236 测试通过，类型检查和隔离构建通过。浏览器再次确认鉴权明细、node/DCGM 误报及不支持的卡片未出现，1440/768/390px 无溢出；没有更改已确认的界面布局。线上前端及恢复快照保持一致。这轮后端和显示逻辑修改仍未提交/推送 GitHub。
+
+### 模型服务新增两项原生指标（2026-10-09）
+- KV 缓存池占用率：`(tensorfold_health:pool_tokens - tensorfold_health:pool_free_tokens) / tensorfold_health:pool_tokens`，实时 Token 槽位使用率，不代表显存占用。
+- 草稿 Token 接受率：`tensorfold:mtp_accepted_total / tensorfold:mtp_drafted_total`，服务启动以来累计口径。
+- 两项均仅在原生采集数值有效时显示；分母为零、缺失、非法比例不展示，真实零值保留。
+- 源码和保留的生产前端同步更新；生产入口 `index-atom-94466ae4fc.js`，补丁记录 `add-native-service-metrics.py`。恢复快照及 manifest 已刷新。
+- 验证：TypeScript 检查通过，TensorFold 9 项测试通过；实际网页展示两项百分比，1440/768/390 宽度无横向溢出、浏览器无运行错误。线上静态文件与快照逐文件 SHA256 一致。
+- 仅重启 dashboard，未重启模型服务；本轮变更尚未提交或推送 GitHub。

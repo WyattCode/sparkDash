@@ -1,3 +1,4 @@
+import { parseTensorfoldMetrics } from "./collectors/tensorfoldMetrics.js";
 // Read-only, bounded Prometheus queries. No arbitrary URL/PromQL from clients.
 import fs from 'node:fs';
 const BASE = process.env.SPARKDASH_PROMETHEUS_URL || 'http://127.0.0.1:9090';
@@ -56,7 +57,7 @@ async function request(path, params = {}) {
   return body.data;
 }
 
-export function registerOperationsRoutes(app, snapshots = () => [], eventFile = null) {
+export function registerOperationsRoutes(app, snapshots = () => [], eventFile = null, getSpark = () => null) {
   let cached = null, pending = null;
   const states = new Map();
   const events = [];
@@ -71,13 +72,17 @@ export function registerOperationsRoutes(app, snapshots = () => [], eventFile = 
   async function load() {
     const previousEvents = JSON.stringify(events);
     const generatedAt = Date.now();
+    const currentSnapshots = snapshots();
+    const local = currentSnapshots.filter(s => s.isLocal && s.role !== 'worker' && s.metrics.llm.some(l => l.backend === 'tensorfold'));
+    const nativeOnly = local.length > 0 && currentSnapshots.filter(s => s.role !== 'worker' && s.llmMonitoring !== false).every(s => local.includes(s) && s.metrics.llm.every(l => l.backend === 'tensorfold'));
     const entries = await Promise.all(Object.entries(QUERIES).map(async ([key, query]) => {
+      if (nativeOnly) return [key,{series:[],error:null}];
       try { return [key, {series: normalizeSeries((await request('query', {query})).result), error: null}]; }
       catch { return [key, {series: [], error: '采集不可用'}]; }
     }));
     let targets = [], targetError = null;
     try {
-      const data = await request('targets', {state: 'active'});
+      const data = nativeOnly ? {activeTargets:[]} : await request('targets', {state: 'active'});
       targets = data.activeTargets.map(t => ({labels: t.labels, health: t.health, lastScrape: t.lastScrape}));
       for (const t of targets) {
         const key = `${t.labels.job}/${t.labels.instance}`;
@@ -91,6 +96,34 @@ export function registerOperationsRoutes(app, snapshots = () => [], eventFile = 
       }
       events.splice(100);
     } catch { targetError = '无法获取采集目标'; }
+    const metrics = Object.fromEntries(entries);
+    for (const s of local) {
+      for (const [index, llm] of s.metrics.llm.entries()) {
+        if (llm.backend !== 'tensorfold') continue;
+        const port = s.llmPorts?.[index] ?? s.llmPort;
+        if (!Number.isInteger(port) || port < 1 || port > 65535) continue;
+        const labels = {node:s.name,instance:`127.0.0.1:${port}`,model_name:llm.modelId,job:'vllm',backend:'tensorfold',source:'native'};
+        if (!llm.available) {
+          targets.push({labels,health:'down',lastScrape:new Date(generatedAt).toISOString()});
+          continue;
+        }
+        try {
+          const key = getSpark(s.id)?.llmApiKeys?.[String(port)];
+          const res = await fetch(`http://127.0.0.1:${port}/metrics`,{signal:AbortSignal.timeout(3000),redirect:'error',headers:key?{Authorization:`Bearer ${key}`}:{}});
+          if (!res.ok) throw new Error('metrics unavailable');
+          const text = await res.text();
+          if (!text.includes('tensorfold:')) throw new Error('not TensorFold metrics');
+          const sample = parseTensorfoldMetrics(text);
+          for (const [name,value] of Object.entries(sample)) {
+            metrics[name] ||= {series:[],error:null};
+            metrics[name].series.push({labels,points:[[generatedAt,value]]});
+          }
+          targets.push({labels,health:'up',lastScrape:new Date(generatedAt).toISOString()});
+        } catch {
+          targets.push({labels,health:'down',lastScrape:new Date(generatedAt).toISOString()});
+        }
+      }
+    }
     for (const s of snapshots()) {
       const gpuAt = s.telemetry?.updatedAt?.gpu;
       const state = !s.online ? '节点离线' : !s.telemetry?.successful?.gpu || !gpuAt || generatedAt - gpuAt > 30000 ? 'GPU 采集异常' : s.metrics.gpu?.throttle?.thermal ? 'GPU 热降频' : s.role !== 'worker' && !s.workerNode && s.llmMonitoring !== false && !s.metrics.llm.some(l => l.available) ? '模型 API 探测异常' : '已检查项目正常';
@@ -104,7 +137,7 @@ export function registerOperationsRoutes(app, snapshots = () => [], eventFile = 
         fs.renameSync(`${eventFile}.tmp`, eventFile);
       } catch { eventStorageError = '事件写入失败，当前仅保留内存记录'; }
     }
-    cached = {generatedAt, startedAt, windowMinutes: 30, metrics: Object.fromEntries(entries), targets, targetError, eventStorageError, events: [...events]};
+    cached = {generatedAt, startedAt, windowMinutes: 30, expectedTargets: nativeOnly ? [] : null, metrics, targets, targetError, eventStorageError, events: [...events]};
     return cached;
   }
   app.get('/api/operations', async (_req, res) => {
