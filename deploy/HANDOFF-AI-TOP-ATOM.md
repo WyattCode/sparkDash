@@ -202,3 +202,10 @@ npm run build -- --outDir /tmp/sparkdash-source-build
 - 源码和保留的生产前端同步更新；生产入口 `index-atom-94466ae4fc.js`，补丁记录 `add-native-service-metrics.py`。恢复快照及 manifest 已刷新。
 - 验证：TypeScript 检查通过，TensorFold 9 项测试通过；实际网页展示两项百分比，1440/768/390 宽度无横向溢出、浏览器无运行错误。线上静态文件与快照逐文件 SHA256 一致。
 - 仅重启 dashboard，未重启模型服务；本轮变更尚未提交或推送 GitHub。
+
+### 上游后端修复移植（2026-10-10）
+上游 2.0.0 已核对至 `606e0f3`，本轮为选择性后端移植，未整体升级 2.0。详见 `deploy/upstream-20261010/REVIEW.md` 的来源提交、范围和暂未整合项目。
+- 保留成员变化前的能耗历史，修复本地 SSH 用户及 Hermes 脚本校验。
+- 远端离线暂停采集、存活探测退避；保留原有连接诊断记录和采集成功标记。
+- 后端 405 项、前端 236 项测试通过，类型检查和隔离构建通过；生产静态快照无需变更。
+- 更新前备份分支 `backup/atom-before-upstream-20261010`，提交 `ab20d96`。回滚本轮后端可恢复此提交中的 server 文件后重启 sparkdash；模型服务无需重启。
