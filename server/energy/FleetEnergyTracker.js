@@ -232,6 +232,7 @@ export class FleetEnergyTracker {
     this._setInterval = setIntervalFn;
     this._clearInterval = clearIntervalFn;
     this._fs = fileSystem;
+    this._pendingScopeArchive = null;
     this._writeState = writeState;
     this._buckets = new Map();
     this._bucketsOrdered = true;
@@ -607,15 +608,22 @@ export class FleetEnergyTracker {
   _archiveOutOfScopeState(raw) {
     const stamp = validNonnegativeSafeInteger(raw?.savedAt) ? raw.savedAt : Math.floor(this._now());
     const parsed = path.parse(this.filePath);
-    const archivePath = path.join(parsed.dir, `${parsed.name}.scope-${stamp}${parsed.ext}`);
+    let archivePath = path.join(parsed.dir, `${parsed.name}.scope-${stamp}${parsed.ext}`);
     try {
-      if (this._fs.existsSync(archivePath)) return;
+      let suffix = 0;
+      while (this._fs.existsSync(archivePath)) {
+        suffix += 1;
+        archivePath = path.join(parsed.dir, `${parsed.name}.scope-${stamp}-${suffix}${parsed.ext}`);
+      }
       this._fs.renameSync(this.filePath, archivePath);
       console.warn(
         `[FleetEnergyTracker] fleet membership changed; previous energy history kept at ${archivePath}`
       );
+      this._pendingScopeArchive = null;
+      return true;
     } catch (error) {
       console.warn(`[FleetEnergyTracker] unable to archive ${this.filePath}: ${error.message}`);
+      return false;
     }
   }
 
@@ -633,6 +641,7 @@ export class FleetEnergyTracker {
           raw.nodeIds.length !== this.nodeIds.length ||
           raw.nodeIds.some((id) => !this._nodeIdSet.has(id)))
       ) {
+        this._pendingScopeArchive = raw;
         this._archiveOutOfScopeState(raw);
         return;
       }
@@ -790,6 +799,8 @@ export class FleetEnergyTracker {
 
   flush() {
     if (!this.filePath || !this._dirty) return false;
+    // Never overwrite a previous fleet until its history is safely archived.
+    if (this._pendingScopeArchive && !this._archiveOutOfScopeState(this._pendingScopeArchive)) return false;
     const now = this._now();
     if (Number.isFinite(now)) this._prune(now);
     const buckets = [...this._buckets.values()].sort(

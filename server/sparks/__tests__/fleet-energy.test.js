@@ -1693,3 +1693,30 @@ test("reload archives state from another fleet scope instead of letting the next
   assert.deepEqual(JSON.parse(fs.readFileSync(filePath, "utf8")).nodeIds, CANONICAL_NODE_IDS);
   assert.equal(fs.readFileSync(archivePath, "utf8"), previous);
 });
+
+
+test("scope archive collisions preserve both histories and failed archives block flush until retry", (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sparkdash-energy-archive-retry-"));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  const filePath = path.join(dir, "fleet-energy.json");
+  const previous = JSON.stringify({version:1,nodeIds:["other"],savedAt:2000,buckets:[]});
+  const archivePath = path.join(dir, "fleet-energy.scope-2000.json");
+  fs.writeFileSync(filePath, previous);
+  fs.writeFileSync(archivePath, "older history");
+  let fail = true;
+  const fsImpl = {...fs, renameSync(...args) {
+    if (fail) throw new Error("archive unavailable");
+    return fs.renameSync(...args);
+  }};
+  const tracker = new FleetEnergyTracker({filePath,fileSystem:fsImpl,now:()=>6000,setIntervalFn:()=>1,clearIntervalFn:()=>{}});
+  tracker.record(fleetSnapshots(100),4000);
+  tracker.record(fleetSnapshots(100),6000);
+  assert.equal(tracker.flush(),false);
+  assert.equal(fs.readFileSync(filePath,"utf8"),previous);
+  assert.equal(fs.readFileSync(archivePath,"utf8"),"older history");
+  fail=false;
+  assert.equal(tracker.flush(),true);
+  assert.equal(fs.readFileSync(path.join(dir,"fleet-energy.scope-2000-1.json"),"utf8"),previous);
+  assert.equal(fs.readFileSync(archivePath,"utf8"),"older history");
+  assert.deepEqual(JSON.parse(fs.readFileSync(filePath,"utf8")).nodeIds,CANONICAL_NODE_IDS);
+});
