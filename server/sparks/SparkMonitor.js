@@ -95,6 +95,8 @@ export class SparkMonitor {
     // Online status from dedicated liveness checks (not metric poll success)
     this.online = false;
     this.lastOnlineOk = 0;
+    this._nextLivenessAt = 0;
+    this._livenessFailures = 0;
 
     // System uptime seconds (from /proc/uptime), null when offline
     this._uptimeSeconds = null;
@@ -147,6 +149,9 @@ export class SparkMonitor {
 
   /** Hot-update config without tearing down poll loops / rate baselines. */
   updateConfig(spark) {
+    // Editing credentials/connection settings must permit an immediate retry.
+    this._nextLivenessAt = 0;
+    this._livenessFailures = 0;
     const wasLlm = this._llmMonitoringEnabled(this.spark);
     const wasComfy = this._comfyMonitoringEnabled(this.spark);
     const prevComfyPort = this._comfyPort(this.spark);
@@ -405,6 +410,8 @@ export class SparkMonitor {
   /** Start background polling. */
   start() {
     if (this._running) return;
+    this._nextLivenessAt = 0;
+    this._livenessFailures = 0;
     this._runGeneration += 1;
     this._running = true;
     this._stopped = false;
@@ -556,6 +563,7 @@ export class SparkMonitor {
 
   async _checkOnline() {
     if (!this._running || this._inflight.online) return;
+    if (!this.spark.isLocal && Date.now() < this._nextLivenessAt) return;
     const runGeneration = this._runGeneration;
     const checkToken = Symbol("online");
     this._inflight.online = checkToken;
@@ -589,6 +597,8 @@ export class SparkMonitor {
       this.lastOnlineOk = Date.now();
       this._uptimeSeconds = uptimeSeconds;
       this._noteProbe(null,beganAt);
+      this._nextLivenessAt = 0;
+      this._livenessFailures = 0;
     } catch (error) {
       if (!isCurrentRun()) return;
       if (!this.lastOnlineOk || Date.now() - this.lastOnlineOk > ONLINE_GRACE_MS) {
@@ -596,6 +606,13 @@ export class SparkMonitor {
         this._uptimeSeconds = null;
       }
       this._noteProbe(error,beganAt);
+      if (!local) {
+        const failures = ++this._livenessFailures;
+        const authFailure = this._connectivity.lastError?.category === 'authentication';
+        const delay = authFailure && failures >= 5 ? 15 * 60_000
+          : [5_000, 15_000, 30_000, 60_000][Math.min(failures, 4) - 1];
+        this._nextLivenessAt = Date.now() + delay;
+      }
     } finally {
       if (this._inflight.online === checkToken) {
         this._inflight.online = false;
@@ -623,6 +640,10 @@ export class SparkMonitor {
 
   async _pollDomain(domain) {
     if (!this._running || this._inflight[domain]) return;
+    // Keep local reads independent of liveness. For remotes, do not multiply
+    // failed logins across every domain while the liveness probe backs off.
+    if (!this.spark.isLocal && (!this.online ||
+        this._connectivity.lastError?.category === 'authentication')) return;
     // Skip storage auto-poll when disabled for this spark
     if (domain === "storage" && this.spark.storagePollDisabled) return;
     // Worker nodes: no local LLM API

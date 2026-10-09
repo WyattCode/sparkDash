@@ -63,3 +63,39 @@ test("failed remove preserves registry entry, secrets, and listeners", () => {
   assert.equal(r.hasPassword("existing"), true);
   assert.deepEqual(events, []);
 });
+
+test("changing SSH destination drops old credentials but accepts a new password atomically", () => {
+  const r = registry();
+  r.setLlmApiKey('existing', 8888, 'old-api-key');
+  r.updateSpark('existing', {ssh: {host: '127.0.0.2', password: 'new-password'}});
+  assert.equal(r.getSpark('existing').ssh.password, 'new-password');
+  assert.equal(r.getSpark('existing').llmApiKeys?.['8888'], undefined);
+  const reloaded = new SparkRegistry();
+  assert.equal(reloaded.getSpark('existing').ssh.password, 'new-password');
+  assert.equal(reloaded.getSpark('existing').llmApiKeys?.['8888'], undefined);
+});
+
+test("failed host/secret save keeps the old destination and both old secrets on disk", () => {
+  const r = registry();
+  r.setLlmApiKey('existing', 8888, 'old-api-key');
+  const original = r.getSpark('existing');
+  const events = [];
+  r.onChange((action) => events.push(action));
+  r._saveSecrets = () => { throw Error('injected secret write failure'); };
+  assert.throws(() => r.updateSpark('existing', {ssh: {host: '127.0.0.2', password:'new-password'}}), /injected secret/);
+  assert.deepEqual(r.getSpark('existing'), original);
+  assert.deepEqual(new SparkRegistry().getSpark('existing'), original);
+  assert.deepEqual(events, []);
+});
+
+test("display edits retain credentials; SSH user and HTTP target changes clear only affected secrets", () => {
+  const r = registry();
+  r.setLlmApiKey('existing', 8888, 'old-api-key');
+  r.updateSpark('existing', {name:'Renamed'});
+  assert.equal(r.hasPassword('existing'), true);
+  r.updateSpark('existing', {ssh:{user:'another'}});
+  assert.equal(r.hasPassword('existing'), false);
+  assert.equal(r.getSpark('existing').llmApiKeys?.['8888'], 'old-api-key');
+  r.updateSpark('existing', {lanIp:'127.0.0.3'});
+  assert.equal(r.getSpark('existing').llmApiKeys?.['8888'], undefined);
+});

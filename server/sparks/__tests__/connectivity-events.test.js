@@ -30,14 +30,16 @@ test('browser events whitelist fields and cannot forge server evidence',()=>{
   assert.ok(!JSON.stringify(classifyProbeError(Error('password=secret'))).includes('secret'));
 });
 
-test('record failures during grace, offline transition and recovery without changing semantics',async()=>{
+test('record failures during grace, offline transition and recovery with scheduled retries',async t=>{
+  let now=100000;t.mock.method(Date,'now',()=>now);
   const events=[];const m=new SparkMonitor({id:'worker-fixture',name:'worker-fixture',isLocal:false,lanIp:'127.0.0.1',llmMonitoring:false,comfyMonitoring:false},{onConnectivity:e=>events.push(e)});
   m._running=true;m._readUptime=async()=>123;
   await m._checkOnline();assert.equal(m.online,true);assert.equal(events.at(-1).kind,'probe_recovered');
   m._readUptime=async()=>{throw Error('Connection timed out during banner exchange');};
   await m._checkOnline();assert.equal(m.online,true);assert.equal(events.at(-1).kind,'probe_failure');assert.equal(events.at(-1).lastError.category,'ssh_banner_timeout');
-  m.lastOnlineOk=Date.now()-11000;
+  now+=11000;
   await m._checkOnline();assert.equal(m.online,false);assert.equal(events.at(-1).online,false);
+  now=m._nextLivenessAt;
   m._readUptime=async()=>124;await m._checkOnline();assert.equal(m.online,true);assert.equal(events.at(-1).previousFailures,2);
   assert.equal(m.snapshot().connectivity.phase,'online');
 });

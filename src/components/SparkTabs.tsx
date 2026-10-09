@@ -1,3 +1,4 @@
+import { displayName } from '../displayName';
 import { memo, useEffect, useLayoutEffect, useMemo, useState, useRef, useCallback } from "react";
 import { createPortal } from "react-dom";
 import {
@@ -177,14 +178,14 @@ function TabChrome({
         type="button"
         className="pill-handle"
         title="拖动以排序"
-        aria-label={`拖动排序 ${spark.name}`}
+        aria-label={`拖动排序 ${displayName(spark.name)}`}
         {...dragHandleProps}
       >
         <GripIcon />
       </button>
       <TabLabelButton
         id={spark.id}
-        name={spark.name}
+        name={displayName(spark.name)}
         online={spark.online}
         isActive={isActive}
         onSelect={onSelect}
@@ -561,7 +562,7 @@ function MobileSparkMenu({
               spark.online ? "bg-success" : "bg-danger"
             }`}
           />
-          {spark.name}
+          {displayName(spark.name)}
         </button>
       ))}
       <button

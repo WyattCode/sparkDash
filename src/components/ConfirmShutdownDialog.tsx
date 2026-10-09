@@ -1,3 +1,4 @@
+import { displayName } from '../displayName';
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useModalPresence } from "../hooks/useModalPresence";
@@ -130,7 +131,7 @@ export function ConfirmShutdownDialog({
 
           <div className="rounded border border-border bg-surface-elevated p-3 text-xs text-muted" role="status">
             <p>关机依赖检查（只读，不执行关机）</p>
-            {checking?<p>正在检查脚本、权限和节点连接…</p>:readiness?.map(r=><p key={r.id} className="mt-1">{r.name}：{r.message}</p>)}
+            {checking?<p>正在检查脚本、权限和节点连接…</p>:readiness?.map(r=><p key={r.id} className="mt-1">{displayName(r.name)}：{r.message}</p>)}
             {!checking&&!ready&&<p className="mt-1">未就绪或检查已过期，已禁止提交。</p>}
             <button type="button" className="mt-2 underline" disabled={checking||submitting} onClick={()=>setRetry(n=>n+1)}>重新检查依赖</button>
           </div>

@@ -3,6 +3,7 @@ import { SPARKS_JSON_PATH, LLM_PORT } from "../config.js";
 import { loadSecrets, saveSecrets } from "../secretsStore.js";
 import { atomicWrite } from "../util/atomicWrite.js";
 import { isValidSparkId } from "../validate.js";
+import { llmProbeHost } from "../collectors/llmHost.js";
 
 /**
  * SparkRegistry — loads, persists, and emits change events for the Spark list.
@@ -161,14 +162,34 @@ export class SparkRegistry {
     };
     const nextSparks = [...this._sparks];
     nextSparks[idx] = this._normalizeConfig(updated);
+    // Credentials belong to their destination, including the SSH tunnel used
+    // by benchmarks. Stage both secret maps and persist them in one write.
+    const sshTarget = (s) => JSON.stringify([Boolean(s.isLocal), s.ssh.user, s.ssh.host || s.lanIp]);
+    const llmTarget = (s) => JSON.stringify([llmProbeHost(s), !s.isLocal && (s.ssh.host || s.lanIp)]);
+    const nextPasswords = new Map(this._passwords);
+    const nextLlmApiKeys = new Map(this._llmApiKeys);
+    let secretsChanged = false;
+    if (sshTarget(nextSparks[idx]) !== sshTarget(prev)) {
+      secretsChanged = nextPasswords.delete(id) || secretsChanged;
+    }
+    if (llmTarget(nextSparks[idx]) !== llmTarget(prev)) {
+      secretsChanged = nextLlmApiKeys.delete(id) || secretsChanged;
+    }
+    if (hasPasswordUpdate && passwordUpdate != null) {
+      if (passwordUpdate === "") nextPasswords.delete(id);
+      else nextPasswords.set(id, String(passwordUpdate));
+      secretsChanged = true;
+    }
     this._save(nextSparks);
     try {
-      if (hasPasswordUpdate) this._storePassword(id, passwordUpdate);
+      if (secretsChanged) this._saveSecrets(nextPasswords, nextLlmApiKeys);
     } catch (err) {
       this._save(this._sparks);
       throw err;
     }
     this._sparks = nextSparks;
+    this._passwords = nextPasswords;
+    this._llmApiKeys = nextLlmApiKeys;
     this._emit("update", this._withSecrets(this._sparks[idx]));
     return this._withSecrets(this._sparks[idx]);
   }

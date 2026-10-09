@@ -1,3 +1,4 @@
+import { displayName } from '../../displayName';
 import type { SparkSnapshot } from "../../api/types";
 import { resolveSparkRole } from "../../api/sparkRole";
 import { SparkActions } from "./SparkActions";
@@ -36,7 +37,7 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
         />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate text-base font-semibold text-text-strong">{spark.name}</h2>
+            <h2 className="truncate text-base font-semibold text-text-strong">{displayName(spark.name)}</h2>
             {(() => {
               const role = resolveSparkRole(spark);
               const text =

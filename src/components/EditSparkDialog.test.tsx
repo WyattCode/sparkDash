@@ -29,11 +29,21 @@ it('changed password-auth target requires a fresh password, not saved secret for
   await open();input('[aria-label="ComfyUI 端口"]','9000');act(()=>button('测试连接').click());await flush();
   expect(document.querySelector('[role=alert]')?.textContent).toContain('重新输入 SSH 密码');expect(testSpark).not.toHaveBeenCalled();expect(testSparkConfig).not.toHaveBeenCalled();
 });
-it('partial save reports persisted password and preserves config draft',async()=>{
+it('failed save preserves password draft and never writes credentials separately',async()=>{
   vi.mocked(setSparkPassword).mockResolvedValue({} as never);vi.mocked(updateSpark).mockRejectedValue(Error('配置保存失败'));
   const close=vi.fn();await open(close);input('input[type=password]','new-secret');act(()=>button('保存').click());await flush();
-  expect(document.querySelector('[role=status]')?.textContent).toContain('密码也已更新');expect(document.querySelector('[role=alert]')?.textContent).toContain('配置保存失败');
-  expect((document.querySelector('input[type=password]') as HTMLInputElement).value).toBe('');expect(close).not.toHaveBeenCalled();
+  expect(setSparkPassword).not.toHaveBeenCalled();
+  expect(vi.mocked(updateSpark).mock.calls[0][1].ssh?.password).toBe('new-secret');
+  expect(document.querySelector('[role=alert]')?.textContent).toContain('配置保存失败');
+  expect((document.querySelector('input[type=password]') as HTMLInputElement).value).toBe('new-secret');expect(close).not.toHaveBeenCalled();
+});
+it('testing retains a typed password for the subsequent single save request',async()=>{
+  await open();input('input[type=password]','new-test-secret');
+  act(()=>button('测试连接').click());await flush();
+  expect((document.querySelector('input[type=password]') as HTMLInputElement).value).toBe('new-test-secret');
+  act(()=>button('保存').click());await flush();
+  expect(setSparkPassword).not.toHaveBeenCalled();
+  expect(vi.mocked(updateSpark).mock.calls[0][1].ssh?.password).toBe('new-test-secret');
 });
 it('in-flight save blocks double submit, close and test; focus stays inside',async()=>{
   let finish!:(v:never)=>void;vi.mocked(updateSpark).mockReturnValue(new Promise(r=>{finish=r;}));

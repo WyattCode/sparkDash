@@ -1,3 +1,4 @@
+import { displayName } from '../../displayName';
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SparkSnapshot } from "../../api/types";
 
@@ -33,7 +34,7 @@ export function FleetAlertStrip({ sparks, onSelect }: { sparks: SparkSnapshot[];
       <ul className="mt-2 flex flex-wrap gap-2">
         {alerts.map((alert) => <li key={alert.key}>
           <button type="button" onClick={() => onSelect?.(alert.spark.id)} className={`min-h-11 rounded border px-3 py-2 text-left text-xs ${alert.severity === "critical" ? "border-danger/50 text-danger" : "border-warning/50 text-warning"}`}>
-            <strong>{alert.spark.name}</strong> · {alert.label} · {Math.max(0, Math.floor((now - (firstSeen.current.get(alert.key) ?? now)) / 60_000))}m
+            <strong>{displayName(alert.spark.name)}</strong> · {alert.label} · {Math.max(0, Math.floor((now - (firstSeen.current.get(alert.key) ?? now)) / 60_000))}m
           </button>
         </li>)}
       </ul>

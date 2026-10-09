@@ -9,6 +9,7 @@
  * without a real canvas context.
  */
 import { decodeBenchTypeLabel } from "../../shared/llmPrompts.js";
+import { displayName } from '../../displayName';
 import { formatContextSize } from "../../shared/prefillBench.js";
 import type { DecodeBenchJob, PrefillBenchJob } from "../../api/types";
 
@@ -147,8 +148,8 @@ export function buildDecodeShareCard(
 
   const concurrencies = job.config?.concurrencies ?? [];
   return {
-    brand: "sparkDash",
-    host: src.sparkName || "",
+    brand: "SparkDash",
+    host: displayName(src.sparkName || ""),
     title: "解码基准测试",
     subtitle: shareCardSubtitle(src),
     status: shareCardStatus(job.status),
@@ -195,8 +196,8 @@ export function buildPrefillShareCard(
 
   const sizes = job.config?.contextSizes ?? [];
   return {
-    brand: "sparkDash",
-    host: src.sparkName || "",
+    brand: "SparkDash",
+    host: displayName(src.sparkName || ""),
     title: "预填充基准测试",
     subtitle: shareCardSubtitle(src),
     status: shareCardStatus(job.status),

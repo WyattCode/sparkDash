@@ -13,6 +13,9 @@ const REDETECT_INTERVAL_MS = 60_000;
 /** Current SGLang names first. Deprecated aliases still work but log a warning per hit. */
 const SGLANG_SERVER_INFO_PATHS = ["/server_info", "/get_server_info"];
 const SGLANG_MODEL_INFO_PATHS = ["/model_info", "/get_model_info"];
+// Optional server-info must not hold up live Prometheus metrics for seconds.
+const SGLANG_INFO_TIMEOUT_MS = 400;
+const SGLANG_INFO_RETRY_MS = 30_000;
 /**
  * SGLang's last_gen_throughput is a sticky gauge (holds last decode rate when
  * idle). Only treat it as live after we observe a change between polls, and
@@ -104,6 +107,9 @@ export class LlmProbe {
     // vLLM inference metrics from /metrics (null when not vLLM / missing series)
     // Metric names follow stock vLLM Prometheus exposition (versions may differ).
     this.kvCacheUsage = null; // 0–1 fraction
+    this.kvCacheGb = null;
+    this.weightsGb = null;
+    this.tokenCounters = null;
     this.requestsRunning = null;
     this.requestsWaiting = null;
     this.ttftP95Seconds = null;
@@ -123,6 +129,7 @@ export class LlmProbe {
     this._lastDetectAt = 0;
     /** @type {{ value: number, liveUntil: number } | null} */
     this._sglangStickyTps = null;
+    this._sglangLoadGenTps = null;
     /** Whether this poll's /server_info carried total_input/output_tokens. */
     this._sglangTotalsPolled = false;
     /**
@@ -208,6 +215,11 @@ export class LlmProbe {
 
   /** Probe the LLM server and return a snapshot. */
   async probe() {
+    // These fields describe this collection, never a cached prior response.
+    this.tokenCounters = null;
+    this.kvCacheGb = null;
+    this.weightsGb = null;
+    this.kvCacheUsage = null;
     try {
       const shouldDetect =
         this.serverIsOpenAI === null ||
@@ -250,6 +262,11 @@ export class LlmProbe {
   }
 
   _resetDetection() {
+    this.tokenCounters = null;
+    this.kvCacheGb = null;
+    this.weightsGb = null;
+    this._sglangLoadGenTps = null;
+    this._sglangInfoRetryAt = 0;
     this.serverIsOpenAI = null;
     this.backendType = null;
     this.authOpen = null;
@@ -406,10 +423,10 @@ export class LlmProbe {
    * @param {string[]} paths
    * @returns {Promise<object|null>}
    */
-  async _fetchSglangJson(paths) {
+  async _fetchSglangJson(paths, timeoutMs = LLM_PROBE_TIMEOUT_MS) {
     for (const path of paths) {
       try {
-        const res = await this._fetch(`${this.baseUrl}${path}`);
+        const res = await this._fetch(`${this.baseUrl}${path}`, timeoutMs);
         if (!res.ok) continue;
         const data = await res.json().catch(() => null);
         if (data && typeof data === "object" && !Array.isArray(data)) return data;
@@ -423,6 +440,15 @@ export class LlmProbe {
   /** True when SGLang native server-info endpoints respond. */
   async _probeIsSglang() {
     return (await this._fetchSglangJson(SGLANG_SERVER_INFO_PATHS)) != null;
+  }
+
+  async _liveSglangInfo() {
+    if (Date.now() < (this._sglangInfoRetryAt || 0)) return null;
+    const data = await this._fetchSglangJson(
+      SGLANG_SERVER_INFO_PATHS, Math.min(LLM_PROBE_TIMEOUT_MS, SGLANG_INFO_TIMEOUT_MS),
+    );
+    this._sglangInfoRetryAt = data ? 0 : Date.now() + SGLANG_INFO_RETRY_MS;
+    return data;
   }
 
   /** True when Prometheus /metrics exposes ds4-server series (ds4-on-spark). */
@@ -528,11 +554,12 @@ let modelsOk = false;
     // Prefer /server_info — /get_server_info is a deprecated alias that logs every poll.
     if (this.backendType === "sglang" || this.backendType == null) {
       this._sglangTotalsPolled = false;
-      const sgData = await this._fetchSglangJson(SGLANG_SERVER_INFO_PATHS);
+      const sgData = await this._liveSglangInfo();
+      // Live running/queued requests must not depend on optional server-info.
+      if (sgData || this.backendType === "sglang") await this._probeSglangLoad();
       if (sgData) {
         this.backendType = "sglang";
         // Load before last_gen_throughput so inflight can keep a steady rate live.
-        await this._probeSglangLoad();
         this._applySglangServerInfo(sgData, dtSec);
         // Engine tile: Active vs Sleeping. SGLang has no live sleep gauge
         // (sleep_on_idle is a launch flag, not current state). A reachable
@@ -553,6 +580,7 @@ let modelsOk = false;
           const txt = await metricsRes.text();
           if (this._sglangTotalsPolled) this._applySglangPrefillSplit(txt, dtSec);
           else this._applySglangMetrics(txt, dtSec);
+          this._applySglangAccounting(txt, servedModelId || this.modelId);
         }
       } catch {
         /* metrics optional */
@@ -958,6 +986,18 @@ let modelsOk = false;
    * @param {number} dtSec
    */
   _applySglangServerInfo(sgData, dtSec) {
+    const states = Array.isArray(sgData?.internal_states) ? sgData.internal_states : [];
+    const mem = states.find(s => s?.memory_usage)?.memory_usage;
+    this.weightsGb = LlmProbe._positiveNumber(mem?.weight);
+    this.kvCacheGb = LlmProbe._positiveNumber(mem?.kvcache);
+    if (Number.isSafeInteger(sgData.total_output_tokens) && sgData.total_output_tokens >= 0) {
+      this.tokenCounters = {
+        output: sgData.total_output_tokens,
+        prompt: LlmProbe._tokenCount(sgData.total_input_tokens),
+        cached: LlmProbe._tokenCount(sgData.total_cached_tokens),
+        source: 'sglang:server_info',
+      };
+    }
     // Prefer true max context (context_length / max_total_tokens). Do NOT use
     // max_total_num_tokens — that is the KV-cache pool budget across concurrent
     // sequences and is often ~2× the configured context (showed 2.1M for a 1M run).
@@ -1012,6 +1052,56 @@ let modelsOk = false;
     this.generationTps = this._sglangStickyThroughput(lastGen, this._sglangInflight());
   }
 
+  static _tokenCount(value) {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+
+  /** Sum independent series, but collapse replicated TP/PP/EP rank samples.
+   * Keep labels such as is_streaming and dp_rank: those are distinct traffic.
+   */
+  _sglangCounter(txt, name, mode, modelId = this.modelId) {
+    const groups = new Map();
+    for (const line of txt.split('\n')) {
+      const m = /^([^ {]+)(?:\{([^}]*)\})?\s+([\d.eE+-]+)\s*$/.exec(line);
+      if (!m || ![`sglang:${name}`, `sglang_${name}`].includes(m[1])) continue;
+      const labels = [...(m[2] || '').matchAll(/([\w]+)="((?:\\.|[^"\\])*)"/g)];
+      if (mode != null && !labels.some(x => x[1] === 'mode' && x[2] === mode)) continue;
+      const model = labels.find(x => x[1] === 'model_name')?.[2];
+      if (model && modelId && model !== modelId) continue;
+      const value = LlmProbe._tokenCount(Number(m[3]));
+      if (value == null) continue;
+      const key = JSON.stringify(labels.filter(x => !['tp_rank','pp_rank','moe_ep_rank'].includes(x[1]))
+        .map(x => [x[1],x[2]]).sort((a,b) => a[0].localeCompare(b[0])));
+      groups.set(key, Math.max(groups.get(key) ?? 0, value));
+    }
+    const total = [...groups.values()].reduce((a,b) => a+b,0);
+    return groups.size ? LlmProbe._tokenCount(total) : null;
+  }
+
+  _applySglangAccounting(txt, modelId = this.modelId) {
+    const counter = (name, mode) => this._sglangCounter(txt, name, mode, modelId);
+    const gauge = name => this._getPromMetricMax(txt, `sglang:${name}`) ?? this._getPromMetricMax(txt, `sglang_${name}`);
+    let usage = gauge('token_usage');
+    if (usage == null) {
+      const used = gauge('kv_used_tokens'), total = gauge('max_total_num_tokens');
+      if (used != null && total > 0) usage = used / total;
+    }
+    this.kvCacheUsage = Number.isFinite(usage) && usage >= 0 && usage <= 1 ? usage : null;
+    this.kvCacheGb ??= LlmProbe._positiveNumber(gauge('kv_cache_memory_usage_gb'));
+    const output = counter('generation_tokens_total');
+    if (output == null) return;
+    const computed = counter('prefill_effective_tokens_total', 'input');
+    const hits = ['device_hit','host_hit','storage_hit'].map(mode => counter('prefill_effective_tokens_total', mode));
+    const cached = hits.some(n => n != null) ? hits.reduce((sum,n) => sum+(n ?? 0),0) : null;
+    const effective = computed != null && cached != null;
+    this.tokenCounters = {
+      output,
+      prompt: effective ? LlmProbe._tokenCount(computed+cached) : counter('prompt_tokens_total'),
+      cached: effective ? cached : null,
+      source: effective ? 'sglang:prometheus:effective' : 'sglang:prometheus:prompt',
+    };
+  }
+
   /** True when SGLang load probe reported running or waiting requests. */
   _sglangInflight() {
     return (
@@ -1026,6 +1116,7 @@ let modelsOk = false;
    * num_reqs is running + waiting.
    */
   async _probeSglangLoad() {
+    this._sglangLoadGenTps = null;
     for (const path of ["/v1/loads", "/get_load"]) {
       try {
         const res = await this._fetch(`${this.baseUrl}${path}`);
@@ -1049,7 +1140,10 @@ let modelsOk = false;
     let running = 0;
     let waiting = 0;
     let saw = false;
+    let loadGen = null;
     for (const row of rows) {
+      const gen = row.gen_throughput == null ? NaN : Number(row.gen_throughput);
+      if (Number.isFinite(gen) && gen >= 0) loadGen = loadGen == null ? gen : Math.max(loadGen, gen);
       const wait = Number(row.num_waiting_reqs);
       const runDirect = Number(row.num_running_reqs);
       const total = Number(row.num_reqs);
@@ -1067,6 +1161,7 @@ let modelsOk = false;
       }
     }
     if (!saw) return false;
+    this._sglangLoadGenTps = loadGen;
     this.requestsRunning = running;
     this.requestsWaiting = waiting;
     this.slotsActive = Math.round(running);
@@ -1168,23 +1263,34 @@ let modelsOk = false;
     return best;
   }
 
-  /**
-   * Apply SGLang Prometheus /metrics (--enable-metrics).
-   * Supports both `sglang:` and `sglang_` prefixes.
-   * @param {string} txt
-   * @param {number} dtSec
-   */
+  /** Current decode gauge; TP ranks repeat it, so take max, not sum. */
+  _sglangGenGauge(txt) {
+    // TP ranks repeat this gauge: do not sum the same throughput per rank.
+    const value = this._getPromMetricMax(txt, "sglang:gen_throughput") ??
+      this._getPromMetricMax(txt, "sglang_gen_throughput") ?? this._sglangLoadGenTps;
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+
+  _applySglangLiveGauge(txt) {
+    const running = this._getPromMetric(txt, "sglang:num_running_reqs") ??
+      this._getPromMetric(txt, "sglang_num_running_reqs");
+    if (running != null) {
+      this.requestsRunning = running;
+      this.slotsActive = Math.round(running);
+    }
+    const gauge = this._sglangGenGauge(txt);
+    // Gauges are current samples, independent of cumulative-counter baselines.
+    if (gauge != null) this.generationTps = this._sglangInflight()
+      ? Math.round(gauge * 100) / 100 : 0;
+    return gauge;
+  }
+
   _applySglangMetrics(txt, dtSec) {
+    const gauge = this._applySglangLiveGauge(txt);
     const gen =
       this._getPromMetric(txt, "sglang:generation_tokens_total") ??
       this._getPromMetric(txt, "sglang_generation_tokens_total");
     if (gen == null) {
-      const gauge =
-        this._getPromMetric(txt, "sglang:gen_throughput") ??
-        this._getPromMetric(txt, "sglang_gen_throughput");
-      if (gauge != null) {
-        this.generationTps = Math.max(0, Math.round(gauge * 100) / 100);
-      }
       return;
     }
 
@@ -1210,7 +1316,7 @@ let modelsOk = false;
     const inputOwned = ownsBaseline && inputMode != null && this._sglangInputMode === inputMode;
     if (ownsBaseline && dtSec > 0 && dtSec < 10) {
       const deltaOut = gen - this.lastTokenCounts.output;
-      this.generationTps = Math.max(0, Math.round((deltaOut / dtSec) * 100) / 100);
+      if (gauge == null) this.generationTps = Math.max(0, Math.round((deltaOut / dtSec) * 100) / 100);
       if (inputOwned && inputMode === "effective") {
         // Input throughput = tokens actually computed on GPU. Cache hits are
         // reported separately via cachedPrefillTps / prefixCacheHitRate.
@@ -1232,14 +1338,6 @@ let modelsOk = false;
     this._sglangInputMode = inputMode;
     this._sglangTokenSource = "prometheus";
     this.totalOutputTokens = gen;
-
-    const running =
-      this._getPromMetric(txt, "sglang:num_running_reqs") ??
-      this._getPromMetric(txt, "sglang_num_running_reqs");
-    if (running != null) {
-      this.requestsRunning = running;
-      this.slotsActive = Math.round(running);
-    }
 
     if (effective != null) {
       this._setPrefillSplitRates(effective.cached, effective.computed, dtSec, "effective");
@@ -1275,7 +1373,7 @@ let modelsOk = false;
   }
 
   /**
-   * Cache split only — never recomputes generation/prefill from raw deltas and
+   * Cache split plus live decode gauge — never computes rates from raw deltas and
    * never writes `lastTokenCounts` (server_info owns that baseline on the polls
    * where this path is selected, so touching it would mix two counter series).
    * `_setPrefillSplitRates` keeps its own baseline, so no spike can occur.
@@ -1283,6 +1381,9 @@ let modelsOk = false;
    * (see #99). Prefers cache_source="device" so HiCache L1/L2/L3 are not summed.
    */
   _applySglangPrefillSplit(txt, dtSec) {
+    // server_info owns token baselines, but its counters may only advance at
+    // completion. The live gauge is safe to apply without touching baselines.
+    this._applySglangLiveGauge(txt);
     const effective = this._sglangEffectivePrefill(txt);
     if (effective != null) {
       this._setPrefillSplitRates(effective.cached, effective.computed, dtSec, "effective");
@@ -1673,6 +1774,9 @@ let modelsOk = false;
       cachedPrefillTps: this.cachedPrefillTps,
       uncachedPrefillTps: this.uncachedPrefillTps,
       totalOutputTokens: this.totalOutputTokens,
+      tokenCounters: metricsLive ? this.tokenCounters : null,
+      kvCacheGb: metricsLive ? this.kvCacheGb : null,
+      weightsGb: metricsLive ? this.weightsGb : null,
       kvCacheUsage: this.kvCacheUsage,
       requestsRunning: this.requestsRunning,
       requestsWaiting: this.requestsWaiting,
@@ -1727,10 +1831,10 @@ let modelsOk = false;
     return key || null;
   }
 
-  async _fetch(url) {
+  async _fetch(url, timeoutMs = LLM_PROBE_TIMEOUT_MS) {
     const headers = {};
     const apiKey = this._apiKey();
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-    return fetch(url, { signal: AbortSignal.timeout(LLM_PROBE_TIMEOUT_MS), headers });
+    return fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers });
   }
 }

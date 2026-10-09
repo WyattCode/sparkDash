@@ -36,3 +36,9 @@ test/
 # Runtime connectivity logs and local restore backups
 config/connectivity-events.jsonl
 .dist-backup-*/
+config/connectivity-events.jsonl.*
+config/llm-token-totals.json
+config/llm-token-totals.json.*.tmp
+config/fleet-energy.scope-*.json
+config/sparks.json.new
+deploy/OPERATIONS-HANDOFF-*.md

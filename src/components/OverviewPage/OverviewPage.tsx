@@ -1,3 +1,4 @@
+import { displayName } from '../../displayName';
 import { useEffect, useId, useState } from "react";
 import type { SparkSnapshot } from "../../api/types";
 import { isWorkerSpark, resolveSparkRole } from "../../api/sparkRole";
@@ -10,6 +11,8 @@ import { ActivityIcon, PowerOffIcon, PowerOnIcon, RotateIcon } from "../ui/icons
 import { OperationsPanel } from './OperationsPanel';
 import { finite, gpuReady, nodeIssues } from './operationsModel';
 import { temperatureColor } from './temperatureColor';
+import { SparkHero } from './SparkHero';
+import { TokenLedgerCard } from './TokenLedgerCard';
 
 interface OverviewPageProps {
   telemetryStale?: boolean;
@@ -137,7 +140,7 @@ function SparkCard({
               onClick={() => onSelect(spark.id)}
               className="text-left font-inherit text-inherit hover:underline"
             >
-              {spark.name}
+              {displayName(spark.name)}
             </button>
           ) : (
             spark.name
@@ -213,7 +216,7 @@ function SparkCard({
       {isWorkerSpark(spark) && workerInfoOpen && (
         <p id={workerInfoId} role="note" className="worker-role-description text-xs text-muted">
           参与分布式推理，吞吐和延迟统一在主节点查看。
-          {headSpark ? `主节点：${headSpark.name}${headSpark.online ? '' : '（当前离线）'}。` : '尚未关联可识别的主节点。'}
+          {headSpark ? `主节点：${displayName(headSpark.name)}${headSpark.online ? '' : '（当前离线）'}。` : '尚未关联可识别的主节点。'}
         </p>
       )}
 
@@ -390,20 +393,20 @@ function SparkCard({
             if (role === "worker") return (
               <div className="node-card-footer node-worker-summary" aria-label="节点分工">
                 <div><span className="node-worker-summary-text">分布式推理</span></div>
-                <div title={headSpark ? `主节点：${headSpark.name}${headSpark.online ? '' : '（当前离线）'}` : '尚未关联主节点'}>
+                <div title={headSpark ? `主节点：${displayName(headSpark.name)}${headSpark.online ? '' : '（当前离线）'}` : '尚未关联主节点'}>
                   <span className="node-worker-summary-text">
                     <span className="text-muted">主节点 </span>
                     {headSpark ? (
                       <>
                         <a className="worker-head-link" href={`/spark/${encodeURIComponent(headSpark.id)}`}
-                          aria-label={`查看主节点 ${headSpark.name}`}
-                          title={`查看主节点 ${headSpark.name}${headSpark.online ? '' : '（当前离线）'}`}
+                          aria-label={`查看主节点 ${displayName(headSpark.name)}`}
+                          title={`查看主节点 ${displayName(headSpark.name)}${headSpark.online ? '' : '（当前离线）'}`}
                           onClick={event => {
                             if (onSelect && !event.ctrlKey && !event.metaKey && !event.shiftKey && !event.altKey && event.button === 0) {
                               event.preventDefault(); onSelect(headSpark.id);
                             }
                           }}>
-                          {headSpark.name}
+                          {displayName(headSpark.name)}
                         </a>
                         {!headSpark.online ? '（离线）' : ''}
                       </>
@@ -464,11 +467,12 @@ function ComparisonMetric({
           return (
             <div className="comparison-metric__row" key={spark.id}>
               <div className="comparison-metric__label">
-                <span>{spark.name}</span>
+                <span>{displayName(spark.name)}</span>
                 <strong className="font-tabular">{current == null ? (spark.online ? '未采集' : '离线') : format(current)}</strong>
               </div>
               <div className="comparison-metric__track">
                 <span
+                  data-unavailable={current == null}
                   className={spark.role === 'worker' || spark.workerNode ? "is-worker" : "is-head"}
                   style={{ width: `${width}%`, ...(tone ? { background: `var(--color-${tone === 'bg-danger' ? 'danger' : tone === 'bg-warning' ? 'warning' : tone === 'bg-neutral' ? 'text' : spark.role === 'worker' || spark.workerNode ? 'chart-secondary' : 'chart-primary'})` } : {}) }}
                 />
@@ -695,7 +699,7 @@ export function OverviewPage({
               </span>
               <div className="h-1 w-36 overflow-hidden rounded-full bg-border">
                 <div
-                  className={`h-full rounded-full transition-[width] duration-300 ease-out ${
+                  className={`telemetry-progress-fill h-full rounded-full transition-[width] duration-300 ease-out ${
                     batchProg.failed > 0 ? "bg-danger" : "bg-accent"
                   }`}
                   style={{
@@ -755,6 +759,7 @@ export function OverviewPage({
           )}
         </div>
       </div>
+      <SparkHero sparks={sparks} stale={telemetryStale} onSelect={onSelectSpark} />
       <section className="cluster-health" aria-label="可见节点状态">
         <div className="cluster-health__primary">
           <span className="text-sm font-semibold text-text-strong">可见节点状态</span>
@@ -836,6 +841,7 @@ export function OverviewPage({
           />
         ))}
       </div>
+      <TokenLedgerCard />
     </div>
   );
 }

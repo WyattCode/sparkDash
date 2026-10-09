@@ -2,6 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { HermesProbe, chooseLocalInvocation, parseHostPasswd } from "../HermesProbe.js";
 
+test('unsafe stored local usernames are rejected before host execution', async () => {
+  const probe = new HermesProbe({isLocal:true,ssh:{user:'bad;user'}});
+  let executed = false;
+  probe._execLocal = async () => { executed = true; return ''; };
+  await assert.rejects(probe._run('echo harmless',1000), /Invalid SSH user/);
+  assert.equal(executed, false);
+});
+
 /** Build a probe whose `_run` returns a canned remote output. */
 function probeReturning(out) {
   const probe = new HermesProbe({

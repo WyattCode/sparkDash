@@ -1,3 +1,4 @@
+import { displayName } from '../../displayName';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
@@ -745,7 +746,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
       <div className="sw-shell">
         <section className="sw-heading" aria-labelledby="sw-title">
           <div><h1 id="sw-title">并发生成测试<span className="sw-heading-description"> - 对比生成表现</span></h1></div>
-          <div className="sw-model"><strong title={modelId || undefined}>{modelId || '模型名称待确认'}</strong><span> · {spark?.name || sparkId} · 端口 {port}</span></div>
+          <div className="sw-model"><strong title={modelId || undefined}>{modelId || '模型名称待确认'}</strong><span> · {displayName(spark?.name || sparkId)} · 端口 {port}</span></div>
         </section>
         {notice && <div className="sw-notice" role="status">
           <p>{notice}</p>

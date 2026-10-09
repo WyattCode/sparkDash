@@ -43,6 +43,8 @@ import { closeLlmStreamAgent } from "./collectors/LlmStreaming.js";
 import { compareSemver, getLatestRelease } from "./collectors/HermesReleases.js";
 import { FLEET_ENERGY_JSON_PATH } from "./config.js";
 import { FleetEnergyTracker } from "./energy/FleetEnergyTracker.js";
+import { LlmTokenLedger } from './llmtokens/LlmTokenLedger.js';
+import { createLlmTokenRuntime } from './llmtokens/LlmTokenRuntime.js';
 import {
   createFleetEnergyRuntime,
   registerFleetEnergyRoute,
@@ -250,6 +252,7 @@ function consumeBenchStartQuota(req, res) {
 
 // ─── Spark registry ──────────────────────────────────────
 const registry = new SparkRegistry();
+const tokenLedger = new LlmTokenLedger(path.join(ROOT,'config','llm-token-totals.json'));
 
 const fleetEnergyTracker = new FleetEnergyTracker({
   nodeIds: registry.sparkIds,
@@ -317,6 +320,7 @@ const fleetEnergyRuntime = createFleetEnergyRuntime({
   orderedSnapshots,
   monitors,
 });
+const tokenRuntime = createLlmTokenRuntime({ledger:tokenLedger,orderedSnapshots});
 
 // ─── Express app ─────────────────────────────────────────
 const app = express();
@@ -338,6 +342,7 @@ function clientKey(req) {
 
 // ─── REST API ────────────────────────────────────────────
 registerFleetEnergyRoute(app, fleetEnergyTracker);
+app.get('/api/llm-token-totals', (req,res) => res.json(tokenLedger.snapshot(req.query.range)));
 
 // Never return SSH passwords in any response
 app.get("/api/sparks", (_req, res) => {
@@ -415,10 +420,11 @@ app.patch("/api/sparks/:id", (req, res) => {
   try {
     const body = req.body || {};
     // Only validate host fields if they are being updated
-    if (body.lanIp != null || body.ssh?.host != null || body.ssh?.user != null) {
+    if (body.isLocal != null || body.lanIp != null || body.ssh?.host != null || body.ssh?.user != null) {
       const existing = registry.getSpark(req.params.id);
       if (!existing) return res.status(404).json({ error: "Spark not found" });
       const merged = {
+        isLocal: body.isLocal ?? existing.isLocal,
         lanIp: body.lanIp ?? existing.lanIp,
         ssh: { ...existing.ssh, ...(body.ssh || {}) },
       };
@@ -1669,6 +1675,7 @@ if (!startupPreflight.fatal) {
     }
     startAllMonitors();
     fleetEnergyRuntime.start();
+    tokenRuntime.start();
   });
 } else {
   process.exitCode = 1;
@@ -1699,6 +1706,8 @@ async function shutdown(signal) {
     console.error("[sparkDash] failed to flush LLM daily history:", err.message);
   }
   const energyPersistenceSucceeded = fleetEnergyRuntime.stop();
+  let tokenPersistenceSucceeded=true;
+  try { tokenRuntime.stop(); } catch(e) {tokenPersistenceSucceeded=false;console.error('[LlmTokenLedger] shutdown save failed:',e.message);}
   const streamAgentClosedGracefully = await closeLlmStreamAgent();
   if (!streamAgentClosedGracefully) {
     console.warn("[sparkDash] LLM dispatcher close timed out; destroyed open sockets");
@@ -1726,7 +1735,7 @@ async function shutdown(signal) {
     /* ignore */
   }
   wss.close();
-  server.close(() => process.exit(energyPersistenceSucceeded ? 0 : 1));
+  server.close(() => process.exit(energyPersistenceSucceeded && tokenPersistenceSucceeded ? 0 : 1));
   // Safety net: if server.close hangs (lingering keep-alive), force-exit.
   setTimeout(() => process.exit(1), 3000).unref();
 }

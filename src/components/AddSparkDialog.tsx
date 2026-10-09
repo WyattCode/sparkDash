@@ -270,7 +270,7 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
                 </select>
                 {config.ssh.auth === "key" && (
                   <p className="mt-1 text-[10px] text-muted">
-                    SSH 从 sparkDash 主机发起，不是浏览器。Docker 中需挂载私钥至 /root/.ssh/id_ed25519，或设置 SSH_IDENTITY_FILE。IP 必须从该主机可达；本机采集请勾选“本机”以跳过 SSH。
+                    SSH 从 SparkDash 主机发起，不是浏览器。Docker 中需挂载私钥至 /root/.ssh/id_ed25519，或设置 SSH_IDENTITY_FILE。IP 必须从该主机可达；本机采集请勾选“本机”以跳过 SSH。
                   </p>
                 )}
               </div>

@@ -231,15 +231,15 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
           open={installationExpanded} onToggle={e => setInstallationExpanded(e.currentTarget.open)}>
           <summary tabIndex={0} className="text-sm font-medium text-text-strong">安装到桌面</summary>
           <p className="mt-2 text-xs text-muted" role="status">
-            {installation.installed ? '已安装，可从桌面或应用启动器打开 sparkDash。' : installation.message || (installation.ready ? '浏览器已允许安装，可添加到桌面并以独立窗口打开。' : !installation.secure ? '当前为 HTTP 局域网地址。可在 Android 浏览器菜单中尝试“添加到主屏幕”；完整应用安装需要可信 HTTPS，当前可能只能创建快捷方式，菜单选项因浏览器而异。' : '在浏览器菜单中查找“安装应用”或“添加到主屏幕”（选项因浏览器而异）。浏览器允许安装后，此处也会显示安装按钮。')}
+            {installation.installed ? '已安装，可从桌面或应用启动器打开 SparkDash。' : installation.message || (installation.ready ? '浏览器已允许安装，可添加到桌面并以独立窗口打开。' : !installation.secure ? '当前为 HTTP 局域网地址。可在 Android 浏览器菜单中尝试“添加到主屏幕”；完整应用安装需要可信 HTTPS，当前可能只能创建快捷方式，菜单选项因浏览器而异。' : '在浏览器菜单中查找“安装应用”或“添加到主屏幕”（选项因浏览器而异）。浏览器允许安装后，此处也会显示安装按钮。')}
           </p>
-          {installationExpanded && !installation.installed && installation.ready && <button type="button" className="mt-3 rounded border border-border px-3 py-2 text-sm text-accent" disabled={installation.busy} onClick={() => void installation.install()}>{installation.busy ? '正在打开安装提示…' : '安装 sparkDash'}</button>}
+          {installationExpanded && !installation.installed && installation.ready && <button type="button" className="mt-3 rounded border border-border px-3 py-2 text-sm text-accent" disabled={installation.busy} onClick={() => void installation.install()}>{installation.busy ? '正在打开安装提示…' : '安装 SparkDash'}</button>}
           <p className="mt-2 text-xs text-muted">安装后仍需连接集群所在网络；不提供离线监控，不缓存实时指标。</p>
         </details>
 
         {/* Links */}
         <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-3">
-          <span className="text-[10px] text-muted">sparkDash v{packageJson.version}</span>
+          <span className="text-[10px] text-muted">SparkDash v{packageJson.version}</span>
           <span className="text-border-strong text-[10px]">·</span>
           <a
             href="https://x.com/MiaAI_lab"

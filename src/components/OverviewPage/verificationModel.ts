@@ -16,7 +16,7 @@ export function recordLabel(r:VerificationRecord|null|undefined,current:boolean|
   return `${label} · ${r.status==='passed'?'通过':'未通过'}${current?'':'（历史）'}`;
 }
 export function recordNote(r:VerificationRecord|null|undefined) {
-  return r?`${r.at?new Date(r.at).toLocaleString('zh-CN'):'日期未记录'} · ${r.source} · ${r.detail}`:'尚未记录；不会将 API 可达当作验收通过';
+  return r?`${r.at?new Date(r.at).toLocaleString('zh-CN'):'日期未记录'} · ${r.source.replace(/\bsparkDash\b/g, 'SparkDash')} · ${r.detail}`:'尚未记录；不会将 API 可达当作验收通过';
 }
 export function verificationTone(r:VerificationRecord|null|undefined,current:boolean|undefined):'success'|'danger'|'neutral' {
   if(!current||!r)return 'neutral';

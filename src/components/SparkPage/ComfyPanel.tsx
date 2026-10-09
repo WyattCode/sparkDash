@@ -114,7 +114,7 @@ function ProgressBar({ progress }: { progress: ComfyProgress }) {
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-border">
         <div
-          className="h-full rounded-full bg-accent transition-[width] duration-300"
+          className="telemetry-progress-fill h-full rounded-full bg-accent transition-[width] duration-300"
           style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
         />
       </div>
@@ -235,7 +235,7 @@ export function ComfyPanel({
     (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      // Force a real top-level navigation off the sparkDash SPA origin.
+      // Force a real top-level navigation off the SparkDash SPA origin.
       window.open(openUrl, "_blank", "noopener,noreferrer");
     },
     [openUrl]

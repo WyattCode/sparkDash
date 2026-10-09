@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, type CSSProperties } from "react";
+import { displayName } from '../../displayName';
+import { useState, useEffect, useCallback, useRef, type CSSProperties } from "react";
 import type { SparkSnapshot } from "../../api/types";
 import { isLlmMonitoringEnabled } from "../../api/sparkRole";
 import { updateSpark, refreshSparkMetric, addLlmPort, removeLlmPort } from "../../api/client";
@@ -85,6 +86,27 @@ export function SparkPage({
   benchShareImage = false,
   onEdit,
 }: SparkPageProps) {
+  const pageRef = useRef<HTMLDivElement>(null);
+  const previousNode = useRef(spark.id);
+  useEffect(() => {
+    if (previousNode.current === spark.id) return;
+    previousNode.current = spark.id;
+    const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (motion.matches) return;
+    // React reuses host panels between nodes. Replay only on navigation,
+    // not on polling, and never remount forms, dialogs or running tests.
+    const animations: Animation[] = [];
+    pageRef.current?.querySelectorAll(':scope > .spark-header, .spark-page > .panel').forEach((panel, index) => {
+      if (!panel.animate) return;
+      animations.push(panel.animate(
+        [{ opacity: 0, transform: 'translateY(8px)' }, { opacity: 1, transform: 'translateY(0)' }],
+        { duration: 480, delay: Math.min(index, 2) * 60, easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'backwards' },
+      ));
+    });
+    const cancel = () => animations.forEach(animation => animation.cancel());
+    motion.addEventListener('change', cancel);
+    return () => { motion.removeEventListener('change', cancel); cancel(); };
+  }, [spark.id]);
   const { metrics } = spark;
   const [disabledDevices, setDisabledDevices] = useState<string[]>(spark.disabledDevices || []);
   const [disabledInterfaces, setDisabledInterfaces] = useState<string[]>(
@@ -210,7 +232,7 @@ export function SparkPage({
         key={port}
         llm={llmMetrics}
         sparkId={spark.id}
-        sparkName={spark.name}
+        sparkName={displayName(spark.name)}
         llmPort={port}
         llmPorts={llmPorts}
         hasApiKey={Boolean(spark.llmApiKeyPorts?.includes(port))}
@@ -222,7 +244,7 @@ export function SparkPage({
   };
 
   return (
-    <div className="machine-page" data-node-role={spark.role} style={{ display: "flex", flexDirection: "column", gap: "var(--density-page-gap)" }}>
+    <div ref={pageRef} className="machine-page" data-node-role={spark.role} style={{ display: "flex", flexDirection: "column", gap: "var(--density-page-gap)" }}>
       <SparkHeader spark={spark} onEdit={onEdit} />
       {/* Mobile-only action row (Update Hermes / Shutdown·Wake / Edit) — desktop keeps them in the header. */}
       <SparkActions

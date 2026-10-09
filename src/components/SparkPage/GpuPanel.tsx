@@ -166,7 +166,7 @@ export function GpuPanel({ gpu: inputGpu, cpu, sparkId, temperatureUnit, classNa
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-border">
               <div
-                className={`h-full rounded-full transition-[width] duration-300 ease-out ${barColor}`}
+                className={`telemetry-progress-fill h-full rounded-full transition-[width] duration-300 ease-out ${barColor}`}
                 style={{
                   width: `${pct != null ? Math.min(100, Math.max(0, pct)) : 0}%`,
                 }}

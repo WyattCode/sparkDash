@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { allowOpenRemote, authenticate, configuredToken, requireRemoteAuth } from "../../auth.js";
+import { allowOpenRemote, authenticate, authorizeUpgrade, configuredToken, extractBearer, requireRemoteAuth } from "../../auth.js";
 import { createRateLimiter, validateSparkTarget } from "../../validate.js";
 
 test("loopback bind does not require a remote token", () => {
@@ -42,6 +42,21 @@ test("local units may omit LAN IP while remote units still require a host", () =
   assert.equal(validateSparkTarget({ isLocal: true }), null);
   assert.match(validateSparkTarget({ isLocal: false }), /lanIp or ssh.host/);
   assert.equal(validateSparkTarget({ lanIp: "192.168.1.20" }), null);
+  assert.match(validateSparkTarget({isLocal:true,ssh:{user:'bad;user'}}), /Invalid SSH user/);
+});
+
+test('raw WebSocket upgrade reads URL token and respects Authorization precedence', () => {
+  const previous = process.env.SPARKDASH_TOKEN;
+  process.env.SPARKDASH_TOKEN = 'test+token';
+  try {
+    assert.equal(authorizeUpgrade({headers:{},url:'/ws?token=test%2Btoken'}), true);
+    assert.equal(authorizeUpgrade({headers:{},url:'/ws?token=wrong'}), false);
+    assert.equal(authorizeUpgrade({headers:{authorization:'Bearer wrong'},url:'/ws?token=test%2Btoken'}), false);
+    assert.equal(extractBearer({headers:{},url:'http://['}), '');
+  } finally {
+    if (previous === undefined) delete process.env.SPARKDASH_TOKEN;
+    else process.env.SPARKDASH_TOKEN = previous;
+  }
 });
 
 test("rate limiter expires stale keys instead of growing forever", () => {

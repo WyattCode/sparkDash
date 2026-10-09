@@ -1,3 +1,4 @@
+import { displayName } from '../../displayName';
 import { useEffect, useRef, useState } from 'react';
 import type { SparkSnapshot } from '../../api/types';
 import { fetchOperations, fetchOperationsHistory, testSpark, fetchVerification, runVerification } from '../../api/client';
@@ -70,7 +71,7 @@ function History() {
     <select aria-label="历史指标" value={metric} onChange={e=>setMetric(e.target.value)}>{[['output','输出吞吐 · tok/s'],['prefill','输入吞吐 · tok/s'],['gpu','GPU 利用率 · %'],['temperature','GPU 温度 · °C'],['power','GPU 功耗 · W']].map(([v,l])=><option value={v} key={v}>{l}</option>)}</select>
     <select aria-label="历史时间范围" value={minutes} onChange={e=>setMinutes(Number(e.target.value))}><option value={30}>过去 30 分钟</option><option value={60}>过去 1 小时</option><option value={360}>过去 6 小时</option></select>
   </div></div><p className="ops-note">Prometheus 历史 · 吞吐为 5 分钟速率 · 每 30 秒刷新 · 断点保留为缺口</p>
-    {message ? <p role="status" className="ops-empty">{message}</p> : <><canvas ref={canvas} className="ops-chart" role="img" aria-label="所选指标的历史曲线，当前值见下方图例"/><div className="ops-legend">{series.map((s,i)=><span key={i}>{s.labels.node || s.labels.instance} {s.labels.model_name}：{number(s.points.at(-1)?.[1] ?? null)}</span>)}</div></>}
+    {message ? <p role="status" className="ops-empty">{message}</p> : <><canvas ref={canvas} className="ops-chart" role="img" aria-label="所选指标的历史曲线，当前值见下方图例"/><div className="ops-legend">{series.map((s,i)=><span key={i}>{displayName(s.labels.node || s.labels.instance)} {s.labels.model_name}：{number(s.points.at(-1)?.[1] ?? null)}</span>)}</div></>}
   </section>;
 }
 
@@ -110,7 +111,7 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
   const issues=sparks.flatMap(s=>nodeIssues(s).map(message=>({id:s.id,name:s.name,message})));
   const missingTargets = data && !data.targetError ? sparks.flatMap(s => {
     const jobs = ['node', ...(s.kind === 'host' ? [] : ['dcgm']), ...(s.role === 'head' && s.metrics.llm.some(l=>l.backend==='vllm') ? ['vllm','vllm-config'] : [])];
-    return jobs.filter(job=>!data.targets.some(t=>t.labels.node===s.name&&t.labels.job===job)).map(job=>`${s.name} / ${job}`);
+    return jobs.filter(job=>!data.targets.some(t=>t.labels.node===s.name&&t.labels.job===job)).map(job=>`${displayName(s.name)} / ${job}`);
   }) : [];
   function download(){
     let url: string | undefined;
@@ -141,11 +142,11 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
       <Stat label="模型 API 探测" value={stale?'数据已过期':`${services.filter(s=>s.online&&s.metrics.llm.some(l=>l.available)).length} / ${services.length}`} note="按节点统计至少一个 API 可达，非模型数；不代表推理验收通过"/>
       <Stat label="当前节点异常" value={stale?'未知':String(new Set(issues.map(i=>i.id)).size)} note="离线、指标缺失、API、降频及磁盘"/>
     </div>
-    {!!issues.length&&<div className="ops-alerts">{issues.map((v,i)=><button key={i} onClick={()=>onSelect?.(v.id)}>{v.name}：{v.message} · 查看节点</button>)}</div>}
+    {!!issues.length&&<div className="ops-alerts">{issues.map((v,i)=><button key={i} onClick={()=>onSelect?.(v.id)}>{displayName(v.name)}：{v.message} · 查看节点</button>)}</div>}
     {!!missingTargets.length&&<p role="status" className="ops-missing">预期采集目标缺失：{missingTargets.join('、')}。请核对采集配置及节点标签。</p>}
     <nav className="ops-tabs" aria-label="监控分类">{[['service','模型服务'],['history','性能历史'],['network','互联与诊断'],['energy','能耗效率'],['events','异常时间线']].map(([v,label])=><button key={v} aria-pressed={tab===v} onClick={()=>setTab(v)}>{label}</button>)}</nav>
     {tab==='service'&&<div>{services.length===0?<p className="ops-empty">尚未配置模型服务</p>:services.map(s=><div className="ops-service" key={s.id}>
-      {s.metrics.llm.length===0?<><div className="ops-heading"><h3>{s.name}</h3><button onClick={()=>onSelect?.(s.id)}>服务详情</button></div><p className="ops-empty">等待模型 API 指标</p></>:s.metrics.llm.map((llm,i)=>{
+      {s.metrics.llm.length===0?<><div className="ops-heading"><h3>{displayName(s.name)}</h3><button onClick={()=>onSelect?.(s.id)}>服务详情</button></div><p className="ops-empty">等待模型 API 指标</p></>:s.metrics.llm.map((llm,i)=>{
         const port=s.llmPorts?.[i]??s.llmPort;
         const candidates=data?.targets.filter(t=>t.labels.node===s.name&&t.labels.job==='vllm'&&t.labels.instance.endsWith(`:${port}`))||[];
         const target=candidates.length===1?candidates[0]:null;
@@ -159,7 +160,7 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
           <header className="ops-service-header">
             <div className="ops-service-identity">
               <h3>{llm.modelId||'模型信息未采集'}</h3>
-              <div className="ops-service-meta"><span>{s.name}</span><span>{llm.backend||'未知后端'} · 端口 {port}</span><span>上下文 {llm.contextLength??'未采集'}</span></div>
+              <div className="ops-service-meta"><span>{displayName(s.name)}</span><span>{llm.backend||'未知后端'} · 端口 {port}</span><span>上下文 {llm.contextLength??'未采集'}</span></div>
             </div>
             <button className="ops-service-link" onClick={()=>onSelect?.(s.id)}>服务详情</button>
           </header>
@@ -201,8 +202,8 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
     </div>)}</div>}
     {tab==='history'&&<History/>}
     {tab==='network'&&<div className="ops-section"><h3>采集目标与互联诊断</h3><p className="ops-note">{data?.targetError||`${data?.targets.filter(t=>t.health==='up').length??0} / ${data?.targets.length??0} 个目标抓取正常`} · 分别核对每个节点，目标缺失不计为正常</p>
-      <div className="ops-table-wrap"><table><thead><tr><th>节点</th><th>采集服务</th><th>状态</th><th>最后抓取</th></tr></thead><tbody>{data?.targets.map((t,i)=><tr key={i}><td>{t.labels.node||t.labels.instance}</td><td>{t.labels.job}</td><td>{old?'已过期':t.health==='up'?'正常':'失败'}</td><td>{new Date(t.lastScrape).toLocaleTimeString('zh-CN')}</td></tr>)}</tbody></table></div>
-      {sparks.map(s=><div key={s.id} className="ops-service"><div className="ops-heading"><h3>{s.name} · 网络接口</h3><button disabled={checking!==null} onClick={()=>void checkNode(s.id)}>{checking===s.id?'连通检查中…':'检查节点连通性'}</button></div>{checks[s.id]&&<p role="status" className="ops-note">{checks[s.id]}</p>}<p className="ops-note">接口 up 仅代表链路状态；RDMA / NCCL / Rank 尚未接入独立验证。</p>
+      <div className="ops-table-wrap"><table><thead><tr><th>节点</th><th>采集服务</th><th>状态</th><th>最后抓取</th></tr></thead><tbody>{data?.targets.map((t,i)=><tr key={i}><td>{displayName(t.labels.node||t.labels.instance)}</td><td>{t.labels.job}</td><td>{old?'已过期':t.health==='up'?'正常':'失败'}</td><td>{new Date(t.lastScrape).toLocaleTimeString('zh-CN')}</td></tr>)}</tbody></table></div>
+      {sparks.map(s=><div key={s.id} className="ops-service"><div className="ops-heading"><h3>{displayName(s.name)} · 网络接口</h3><button disabled={checking!==null} onClick={()=>void checkNode(s.id)}>{checking===s.id?'连通检查中…':'检查节点连通性'}</button></div>{checks[s.id]&&<p role="status" className="ops-note">{checks[s.id]}</p>}<p className="ops-note">接口 up 仅代表链路状态；RDMA / NCCL / Rank 尚未接入独立验证。</p>
         {(s.metrics.network?.interfaces||[]).filter(n=>!n.disabled&&n.ip&&n.name!=='lo').map(n=><p className="ops-network" key={n.name}><b>{n.name}</b><span>{n.ip} · {n.operstate==='up'?'链路在线':n.operstate==='down'?'链路断开':'状态未知'}</span><span>{stale||!s.online?'数据不可用':`接收 ${number(finite(n.rxSpeed)==null?null:n.rxSpeed/1048576,' MB/s')} / 发送 ${number(finite(n.txSpeed)==null?null:n.txSpeed/1048576,' MB/s')}`}</span></p>)}
         {!s.metrics.network&&<p>网络指标未采集</p>}
         <p className="ops-note">端到端带宽、时延：未测量。吞吐量不代表链路带宽。</p>
@@ -210,7 +211,7 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
       <div className="ops-grid">{['networkErrors','networkDrops'].map((k,i)=><Stat key={k} label={i?'网卡丢弃 · 次/s':'网卡错误 · 次/s'} value={old||data?.metrics[k]?.error?'不可用':number(completeSum(data?.metrics[k]?.series||[]))} note="已采集物理接口统计；缺失时不汇总，不等于端到端丢包率"/>)}</div>
       <p className="ops-note">建议顺序：确认数据新鲜度 → 检查对应采集目标 → 查看节点与模型 API 状态 → 按交接文档处理。监控异常不触发模型重启。</p>
     </div>}
-    {tab==='energy'&&<div className="ops-section"><FleetEnergyCard nodeCount={sparks.length}/><p className="ops-note">能耗为既有估算模型，非墙上电表实测；缺少完整覆盖时不外推。输出 Token 能效按服务计数，不按 Worker 复制。</p><div className="ops-grid">{sparks.map(s=><Stat key={s.id} label={`${s.name} · GPU 功耗`} value={stale||!gpuReady(s)?'不可用':number(finite(s.metrics.gpu?.power.draw),' W')} note="GPU 遥测，不等于整机功耗"/>)}</div></div>}
-    {tab==='events'&&<div className="ops-section"><h3>采集状态事件</h3>{data?.eventStorageError&&<p role="alert">{data.eventStorageError}</p>}<p className="ops-note">最近 100 条持久记录 · 页面轮询时记录 · 无人查看时不采集事件 · 非完整操作审计日志</p>{data?.events.length?<ol className="ops-events">{data.events.map((e,i)=><li key={i}><time>{new Date(e.at).toLocaleString('zh-CN')}</time><b>{e.node}</b><span>{e.message}</span></li>)}</ol>:<p className="ops-empty">尚无事件记录</p>}</div>}
+    {tab==='energy'&&<div className="ops-section"><FleetEnergyCard nodeCount={sparks.length}/><p className="ops-note">能耗为既有估算模型，非墙上电表实测；缺少完整覆盖时不外推。输出 Token 能效按服务计数，不按 Worker 复制。</p><div className="ops-grid">{sparks.map(s=><Stat key={s.id} label={`${displayName(s.name)} · GPU 功耗`} value={stale||!gpuReady(s)?'不可用':number(finite(s.metrics.gpu?.power.draw),' W')} note="GPU 遥测，不等于整机功耗"/>)}</div></div>}
+    {tab==='events'&&<div className="ops-section"><h3>采集状态事件</h3>{data?.eventStorageError&&<p role="alert">{data.eventStorageError}</p>}<p className="ops-note">最近 100 条持久记录 · 页面轮询时记录 · 无人查看时不采集事件 · 非完整操作审计日志</p>{data?.events.length?<ol className="ops-events">{data.events.map((e,i)=><li key={i}><time>{new Date(e.at).toLocaleString('zh-CN')}</time><b>{displayName(e.node)}</b><span>{e.message}</span></li>)}</ol>:<p className="ops-empty">尚无事件记录</p>}</div>}
   </section>;
 }

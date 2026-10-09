@@ -865,6 +865,14 @@ export function LlmPanel({
             </div>
           </div>
 
+          {llm?.backend === 'sglang' && (
+            <div className="grid grid-cols-1 gap-3 border-t border-border pt-3 sm:grid-cols-3" aria-label="SGLang 缓存与内存">
+              <div><div className="text-xs text-muted">KV 缓存占用</div><div className="font-tabular text-sm text-text">{llm.available && llm.kvCacheUsage != null ? `${(llm.kvCacheUsage*100).toFixed(1)}%` : '—'}</div></div>
+              <div><div className="text-xs text-muted">KV 缓存池</div><div className="font-tabular text-sm text-text">{llm.available && llm.kvCacheGb != null ? `${llm.kvCacheGb.toFixed(2)} GB` : '—'}</div></div>
+              <div><div className="text-xs text-muted">模型权重驻留</div><div className="font-tabular text-sm text-text">{llm.available && llm.weightsGb != null ? `${llm.weightsGb.toFixed(2)} GB` : '—'}</div></div>
+              <p className="text-[10px] text-muted sm:col-span-3">引擎上报的单个调度器内存口径，非四机总和；未上报显示 —。KV 占用比例不等于整机共享内存占用。</p>
+            </div>
+          )}
           {llm && (llm.backend === "vllm" || llm.backend === "q27") && (
             <div className="grid grid-cols-2 gap-2 border-t border-border pt-3 sm:grid-cols-4">
               <div className="space-y-0.5">
