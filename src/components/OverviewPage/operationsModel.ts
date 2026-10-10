@@ -1,7 +1,7 @@
 import type { SparkSnapshot } from '../../api/types';
 export interface Series { labels: Record<string, string>; points: [number, number | null][] }
 export interface Operations {
-  generatedAt: number; startedAt: number; windowMinutes: number;
+  generatedAt: number; startedAt: number; windowMinutes: number; backend?: string;
   metrics: Record<string, {series: Series[]; error: string | null}>;
   targets: {labels: Record<string, string>; health: string; lastScrape: string}[];
   targetError: string | null;

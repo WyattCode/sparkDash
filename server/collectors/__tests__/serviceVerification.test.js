@@ -43,6 +43,11 @@ test('model paths match the served adapter without bypassing node configuration'
     assert.ok(f.calls.every(c=>c.opts.method==='GET'));
   } finally {f.cleanup();}
 });
+test('TensorFold auth is read-only and legacy generation adapter is refused',async()=>{
+  const model='GLM-5.3-Flash-EXL3';
+  const f=fixture({snapshots:()=>[{id:'head',name:'fixture-head',isLocal:true,role:'head',llmPort:8888,metrics:{llm:[{modelId:model,backend:'tensorfold'}]}}],fetchImpl:async(_url,opts)=>({status:opts.headers.Authorization==='Bearer SECRET'?200:401,ok:opts.headers.Authorization==='Bearer SECRET',json:async()=>({data:[{id:model}]}),body:{cancel:async()=>{}}})});
+  try{const state=await f.service.status();assert.equal(state.auth.status,'verified');assert.equal(state.manualSupported,false);assert.equal(state.current.inference,false);await assert.rejects(f.service.verify(),e=>e.status===409&&/TensorFold/.test(e.message));}finally{f.cleanup();}
+});
 test('manual verification persists bounded text and image results, then rate limits',async()=>{
   const f=fixture();try{
     const result=await f.service.verify();assert.equal(result.inference.status,'passed');assert.equal(result.vision.status,'passed');

@@ -46,6 +46,29 @@ export function normalizeSeries(result) {
   }));
 }
 
+// Select by the currently observed engine, never mix stopped SGLang history
+// into TensorFold's live service. Unsupported keys deliberately have no query.
+export function queriesForBackend(backend) {
+  if (backend !== 'tensorfold') return QUERIES;
+  const q = {...QUERIES};
+  const scope = '{job="vllm"}';
+  const metric = name => `${name}${scope}`;
+  const fresh = name => `(${metric(name)} and (time() - timestamp(${metric(name)}) < 30))`;
+  const rate = name => `sum by (node,instance)(rate(${metric(name)}[5m])) and on (node,instance) ${fresh(name)}`;
+  q.output = rate('tensorfold_health:completion_tokens_total');
+  q.prefill = rate('tensorfold:prompt_tokens_total');
+  q.running = fresh('tensorfold:requests_running');
+  q.waiting = fresh('tensorfold:requests_waiting');
+  for (const key of ['httpTotal','httpOk','httpErrors','finished','cache','itl','itlSamples','queue','queueSamples']) delete q[key];
+  for (const [key,name] of [['ttft','time_to_first_token'],['e2e','request_latency']]) {
+    const base = `tensorfold:${name}_seconds`;
+    q[key] = `histogram_quantile(0.95,sum by (node,instance,le)(rate(${metric(base+'_bucket')}[30m]))) and on (node,instance) ${fresh(base+'_count')}`;
+    q[key+'Samples'] = `sum by (node,instance)(increase(${metric(base+'_count')}[30m])) and on (node,instance) ${fresh(base+'_count')}`;
+  }
+  q.completed = `sum by (node,instance)(increase(${metric('tensorfold_health:requests_total')}[30m])) and on (node,instance) ${fresh('tensorfold_health:requests_total')}`;
+  return q;
+}
+
 async function request(path, params = {}) {
   const url = new URL(`/api/v1/${path}`, BASE);
   for (const [key, value] of Object.entries(params)) url.searchParams.set(key, String(value));
@@ -68,10 +91,12 @@ export function registerOperationsRoutes(app, snapshots = () => [], eventFile = 
     } catch (e) { if (e.code !== 'ENOENT') eventStorageError = '历史事件读取失败，现有文件未覆盖'; }
   }
   const startedAt = Date.now();
+  const backend = () => snapshots().find(s => s.role === 'head')?.metrics?.llm?.find(l => l.backend)?.backend;
   async function load() {
     const previousEvents = JSON.stringify(events);
     const generatedAt = Date.now();
-    const entries = await Promise.all(Object.entries(QUERIES).map(async ([key, query]) => {
+    const queryBackend=backend();
+    const entries = await Promise.all(Object.entries(queriesForBackend(queryBackend)).map(async ([key, query]) => {
       try { return [key, {series: normalizeSeries((await request('query', {query})).result), error: null}]; }
       catch { return [key, {series: [], error: '采集不可用'}]; }
     }));
@@ -104,11 +129,11 @@ export function registerOperationsRoutes(app, snapshots = () => [], eventFile = 
         fs.renameSync(`${eventFile}.tmp`, eventFile);
       } catch { eventStorageError = '事件写入失败，当前仅保留内存记录'; }
     }
-    cached = {generatedAt, startedAt, windowMinutes: 30, metrics: Object.fromEntries(entries), targets, targetError, eventStorageError, events: [...events]};
+    cached = {generatedAt, startedAt, backend:queryBackend, windowMinutes: 30, metrics: Object.fromEntries(entries), targets, targetError, eventStorageError, events: [...events]};
     return cached;
   }
   app.get('/api/operations', async (_req, res) => {
-    if (cached && Date.now() - cached.generatedAt < 15000) return res.json(cached);
+    if (cached && cached.backend===backend() && Date.now() - cached.generatedAt < 15000) return res.json(cached);
     pending ||= load().finally(() => { pending = null; });
     res.json(await pending);
   });
@@ -118,12 +143,12 @@ export function registerOperationsRoutes(app, snapshots = () => [], eventFile = 
     if (!['output', 'prefill', 'gpu', 'temperature', 'power'].includes(metric)) return res.status(400).json({error: '不支持的指标'});
     const minutes = Number(req.query.minutes || 30);
     if (![30, 60, 360].includes(minutes)) return res.status(400).json({error: '不支持的时间范围'});
-    const key = `${metric}:${minutes}`;
+    const key = `${backend()}:${metric}:${minutes}`;
     const old = historyCache.get(key);
     if (old && Date.now() - old.generatedAt < 30000) return res.json(old);
     try {
       const end = Math.floor(Date.now() / 1000);
-      const data = await request('query_range', {query: QUERIES[metric], start: end - minutes * 60, end, step: Math.max(15, minutes * 60 / 240)});
+      const data = await request('query_range', {query: queriesForBackend(backend())[metric], start: end - minutes * 60, end, step: Math.max(15, minutes * 60 / 240)});
       const payload = {generatedAt: Date.now(), series: normalizeSeries(data.result)};
       historyCache.set(key, payload); res.json(payload);
     } catch { res.status(503).json({error: '历史数据采集不可用'}); }

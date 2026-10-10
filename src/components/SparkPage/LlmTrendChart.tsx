@@ -82,9 +82,11 @@ function windowed(data: readonly number[]): readonly number[] {
 export function LlmTrendChart({
   sparkId,
   llmPort,
+  completedInput=false,
 }: {
   sparkId: string;
   llmPort: number;
+  completedInput?: boolean;
 }) {
   const gen = useMetricsHistory(sparkId, `llm:${llmPort}.tps`);
   const prefill = useMetricsHistory(sparkId, `llm:${llmPort}.prefill`);
@@ -127,7 +129,7 @@ export function LlmTrendChart({
           className="block w-full"
           style={{ height: 64 }}
           role="img"
-          aria-label="过去 30 分钟的生成与预填充吞吐量"
+          aria-label={completedInput?'过去 30 分钟的实时输出与已完成请求输入速率':'过去 30 分钟的生成与预填充吞吐量'}
         >
           {prefillPts.map((points, index) => (
             <g key={`prefill-${index}`}>
@@ -166,7 +168,7 @@ export function LlmTrendChart({
           <span className="font-tabular text-xs text-data">{fmt(genAvg)}</span>
         </span>
         <span>
-          预填充平均值{" "}
+          {completedInput?'完成输入平均值':'预填充平均值'}{" "}
           <span className="font-tabular text-xs text-text">{fmt(prefillAvg)}</span>
         </span>
         <span>

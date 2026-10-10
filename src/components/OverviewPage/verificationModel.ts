@@ -4,7 +4,7 @@ export interface VerificationRecord {
 }
 export interface Verification {
   checkedAt:number; supported:boolean; reason?:string; node?:string; port?:number; model?:string; boot?:string|null;
-  running?:boolean; storageError?:string|null;
+  running?:boolean; storageError?:string|null; manualSupported?:boolean;
   auth?:{status:string;anonymous:number|null;invalid:number|null;keyed:number|null};
   inference?:VerificationRecord|null; warmup?:VerificationRecord|null; vision?:VerificationRecord|null;
   current?:{inference:boolean;warmup:boolean;vision:boolean};

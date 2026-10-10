@@ -47,7 +47,7 @@ export function TokenLedgerCard() {
           {([['输入 Token',row.promptTokens],['缓存命中 Token',row.cachedTokens],['输出 Token',row.completionTokens]] as const).map(([label,value])=><div key={label} className="flex min-w-0 items-baseline justify-between gap-2 sm:block"><dt className="shrink-0 text-[10px] text-muted">{label}</dt><dd className="break-all font-tabular text-sm text-text">{number(value)}</dd></div>)}
         </dl>
       </article>)}
-      <p className="text-[10px] text-muted">缓存命中是输入的一部分，不重复相加。缺失计数显示 —；离线、模型切换及计数器重置会重新建立基线，不补算未知区间。目前接入 SGLang，工作节点不重复计数。</p>
+      <p className="text-[10px] text-muted">缓存命中是输入的一部分，不重复相加。缺失计数显示 —；离线、模型切换及计数器重置会重新建立基线，不补算未知区间。支持 SGLang 与 TensorFold；工作节点不重复计数。</p>
     </div>}
   </details>;
 }

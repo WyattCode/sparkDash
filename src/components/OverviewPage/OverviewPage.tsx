@@ -430,7 +430,7 @@ function SparkCard({
                   <span className="node-throughput-value font-tabular font-semibold text-text-strong">
                     {finite(llm.prefillTps)?.toFixed(0) ?? '未采集'}
                   </span>
-                  <span className="node-throughput-label font-normal text-muted"> 输入吞吐</span>
+                  <span className="node-throughput-label font-normal text-muted" title={llm.backend==='tensorfold'?'已完成请求的输入 Token 速率，非实时 GPU 预填充速度':undefined}>{llm.backend==='tensorfold'?' 完成输入':' 输入吞吐'}</span>
                 </div>
               </div>
             );

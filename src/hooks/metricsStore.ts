@@ -37,6 +37,7 @@ const historyValues = new Map<string, readonly number[]>();
 /** Cached last-N views — refreshed whenever the full series is replaced. */
 const historyTails = new Map<string, readonly number[]>();
 const sparkMap = new Map<string, SparkSnapshot>();
+const llmIdentities=new Map<string,string>();
 const listeners = new Set<() => void>();
 
 const EMPTY: readonly number[] = Object.freeze([] as number[]);
@@ -97,6 +98,7 @@ function pushHistory(key: string, value: number, at: number) {
 
 function removeHistoryForSpark(sparkId: string) {
   const prefix = `${sparkId}:`;
+  for(const key of llmIdentities.keys())if(key.startsWith(prefix))llmIdentities.delete(key);
   for (const key of history.keys()) {
     if (key.startsWith(prefix)) {
       history.delete(key);
@@ -137,6 +139,18 @@ export function ingestSnapshots(sparks: SparkSnapshot[], at = Date.now()): void 
         const llm = m.llm[i];
         const port = ports[i];
         const portKey = port != null ? `:${port}` : `:${i}`;
+        const prefix=`${s.id}:llm${portKey}`;
+        if(llm.backend && llm.modelId){
+          const identity=JSON.stringify([llm.backend,llm.modelId]);
+          const previous=llmIdentities.get(prefix);
+          if(previous && previous!==identity){
+            for(const store of [history,historySamples,historyValues,historyTails]){
+              for(const key of store.keys())if(key.startsWith(prefix+'.'))store.delete(key);
+            }
+          }
+          llmIdentities.set(prefix,identity);
+        }
+        if(!llm.available)continue;
         pushHistory(`${s.id}:llm${portKey}.tps`, llm.generationTps, at);
         pushHistory(`${s.id}:llm${portKey}.prefill`, llm.prefillTps, at);
         // TTFT is sparse: vLLM reports live TTFT only while serving. It is NOT
@@ -247,6 +261,7 @@ export function useSpark(id: string): SparkSnapshot | undefined {
 
 /** Clear all cached state — used on hard reload paths / tests. */
 export function _resetStore(): void {
+  llmIdentities.clear();
   history.clear();
   historySamples.clear();
   historyValues.clear();

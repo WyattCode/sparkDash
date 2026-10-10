@@ -134,7 +134,7 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
     finally {setChecking(null);}
   }
   return <section className="ops-console" aria-label="模型服务控制台">
-    <div className="ops-heading"><div><h2>模型服务控制台</h2><p className="ops-note">{error || (data ? `监控更新：${new Date(data.generatedAt).toLocaleTimeString('zh-CN')} · ${old?'数据已过期':'数据有效'}` : '正在读取监控…')}</p></div><div className="ops-controls"><button className="ui-action-primary" onClick={()=>void refresh()} disabled={loading}>{loading?'检查中…':'检查监控'}</button><button onClick={download}>导出诊断</button><a href={`http://${location.hostname}:3000/`} target="_blank" rel="noreferrer">Grafana 详细看板</a></div></div>
+    <div className="ops-heading"><div><h2>模型服务控制台</h2><p className="ops-note">{error || (data ? `监控更新：${new Date(data.generatedAt).toLocaleTimeString('zh-CN')} · ${old?'数据已过期':'数据有效'}` : '正在读取监控…')}</p></div><div className="ops-controls"><button className="ui-action-primary" onClick={()=>void refresh()} disabled={loading}>{loading?'检查中…':'检查监控'}</button><button onClick={download}>导出诊断</button><a href={`${window.location.protocol}//${window.location.hostname}:3000/`} target="_blank" rel="noreferrer">Grafana 详细看板</a></div></div>
     {exportNote && <p role="status" className="ops-note">{exportNote}</p>}
     <div className="ops-grid ops-health">
       <Stat label="节点在线" value={stale?'数据已过期':`${sparks.filter(s=>s.online).length} / ${sparks.length}`} note="包含隐藏或筛选掉的节点"/>
@@ -150,9 +150,10 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
         const port=s.llmPorts?.[i]??s.llmPort;
         const candidates=data?.targets.filter(t=>t.labels.node===s.name&&t.labels.job==='vllm'&&t.labels.instance.endsWith(`:${port}`))||[];
         const target=candidates.length===1?candidates[0]:null;
-        const usable=!old&&!!target&&target.health==='up'&&now-Date.parse(target.lastScrape)<45000;
+        const usable=!old&&(!data?.backend||data.backend===llm.backend)&&!!target&&target.health==='up'&&now-Date.parse(target.lastScrape)<45000;
         const v=(key:string)=>usable?metricValue(data,key,s.name,target?.labels.instance):null;
         const httpTotal=v('httpTotal');
+        const tensorfold=llm.backend==='tensorfold';
         const check=verification?.supported&&verification.node===s.name&&verification.port===port&&verification.model===llm.modelId?verification:null;
         const checkFresh=!!check&&now-check.checkedAt<65000&&!stale&&s.online&&llm.available;
         const authLabel=!checkFresh?'鉴权探测不可用':({verified:'鉴权已验证',open:'接口未受保护',missing_key:'未配置探测密钥',rejected:'密钥被拒绝'}[check?.auth?.status??'']||'鉴权探测不可用');
@@ -166,17 +167,19 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
           </header>
           <div className="ops-grid">
             <Stat label="输出吞吐" highlight={!stale && s.online && llm.available && finite(llm.generationTps) != null} value={stale||!s.online||!llm.available?'不可用':number(finite(llm.generationTps),' tok/s')} note="模型服务口径，不按 Worker 重复统计"/>
-            <Stat label="输入吞吐" value={stale||!s.online||!llm.available?'不可用':number(finite(llm.prefillTps),' tok/s')} note="预填充，与输出分开统计"/>
+            <Stat label={tensorfold?'已完成请求输入速率':'输入吞吐'} value={stale||!s.online||!llm.available?'不可用':number(finite(llm.prefillTps),' tok/s')} note={tensorfold?'请求结束后更新，非实时 GPU 预填充速度':'预填充，与输出分开统计'}/>
             <Stat label="处理中 / 排队中" value={`${formatCount(v('running'))} / ${formatCount(v('waiting'))}`} note="单位：个请求 · 非模型数或人数"/>
-            <Stat label="推理接口 HTTP 成功率" value={usable?percent(v('httpOk'),httpTotal):'未采集'} note={`过去 30 分钟 · 响应计数：${formatEstimatedCount(httpTotal)} · 不含健康探测；不代表流式完成率`}/>
-            {(['ttft','itl','e2e'] as const).map((k,j)=><Stat key={k} label={['首 Token 延迟 P95','Token 间延迟 P95','总耗时 P95'][j]} value={latency(v(k),v(`${k}Samples`))} note={`服务端 · 过去 30 分钟 · ${sampleHint(v(`${k}Samples`))}${k==='itl'?'（Token 间隔）':''}`}/>)}
-            <Stat label="排队延迟 P95" value={latency(v('queue'),v('queueSamples'))} note={`过去 30 分钟 · ${sampleHint(v('queueSamples'))}`}/>
-            <Stat label="前缀缓存命中率" value={v('cache')==null?'暂无样本':number((v('cache') as number)*100,'%')} note="过去 30 分钟 · 命中 / 查询"/>
+            {!tensorfold&&<Stat label="推理接口 HTTP 成功率" value={usable?percent(v('httpOk'),httpTotal):'未采集'} note={`过去 30 分钟 · 响应计数：${formatEstimatedCount(httpTotal)} · 不含健康探测；不代表流式完成率`}/>}
+            {(tensorfold?['ttft','e2e'] as const:['ttft','itl','e2e'] as const).map(k=><Stat key={k} label={{ttft:'首 Token 延迟 P95',itl:'Token 间延迟 P95',e2e:'总耗时 P95'}[k]} value={latency(v(k),v(`${k}Samples`))} note={`服务端 · 过去 30 分钟 · ${sampleHint(v(`${k}Samples`))}`}/>)}
+            {!tensorfold&&<Stat label="排队延迟 P95" value={latency(v('queue'),v('queueSamples'))} note={`过去 30 分钟 · ${sampleHint(v('queueSamples'))}`}/>}
+            {!tensorfold&&<Stat label="前缀缓存命中率" value={v('cache')==null?'暂无样本':number((v('cache') as number)*100,'%')} note="过去 30 分钟 · 命中 / 查询"/>}
+            {tensorfold&&<Stat label="已结束请求" value={formatEstimatedCount(v('completed'))} note="过去 30 分钟 · 引擎计数，不等同于 HTTP 成功率"/>}
+            {tensorfold&&<Stat label="DFlash2 草稿接受率" value={!stale&&s.online&&llm.available&&llm.mtpAcceptanceRate!=null?number(llm.mtpAcceptanceRate*100,'%'):'暂无样本'} note="启动以来 · 接受草稿 / 验证草稿"/>}
             <Stat label="鉴权状态" value={authLabel} tone={!checkFresh?'neutral':check?.auth?.status==='verified'?'success':check?.auth?.status==='open'||check?.auth?.status==='rejected'?'danger':'neutral'} note={checkFresh?`匿名 ${check?.auth?.anonymous??'未测'} / 错误密钥 ${check?.auth?.invalid??'未测'} / 有效密钥 ${check?.auth?.keyed??'未测'} · ${new Date(check!.checkedAt).toLocaleTimeString('zh-CN')} · 模型列表接口`:'等待新鲜探测结果；不展示密钥'}/>
-            <Stat label="推理验收 / 预热" value={recordLabel(check?.inference,checkFresh&&check?.current?.inference,'inference')} tone={verificationTone(check?.inference,checkFresh&&check?.current?.inference)} note={recordLabel(check?.warmup,checkFresh&&check?.current?.warmup,'warmup')+' · 详见验收记录'}/>
-            <Stat label="多模态能力" value={recordLabel(check?.vision,checkFresh&&check?.current?.vision,'vision')} tone={verificationTone(check?.vision,checkFresh&&check?.current?.vision)} note="仅核验图像输入；不代表音频、视频或完整视觉质量评测"/>
+            {!tensorfold&&<Stat label="推理验收 / 预热" value={recordLabel(check?.inference,checkFresh&&check?.current?.inference,'inference')} tone={verificationTone(check?.inference,checkFresh&&check?.current?.inference)} note={recordLabel(check?.warmup,checkFresh&&check?.current?.warmup,'warmup')+' · 详见验收记录'}/>}
+            {!tensorfold&&<Stat label="多模态能力" value={recordLabel(check?.vision,checkFresh&&check?.current?.vision,'vision')} tone={verificationTone(check?.vision,checkFresh&&check?.current?.vision)} note="仅核验图像输入；不代表音频、视频或完整视觉质量评测"/>}
           </div>
-          <div className="ops-service-footer">
+          {!tensorfold&&<div className="ops-service-footer">
             <details className="ops-service-details">
               <summary>验收与请求详情</summary>
               <div className="ops-service-detail-grid">
@@ -192,8 +195,8 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
                 </section>
               </div>
             </details>
-            {check&&<button className="ops-verify-action" title="轻量复验：文本 + 图像" disabled={verifying||check.running||!checkFresh} onClick={()=>void verifyService()}>{verifying||check.running?'验收中…':'运行复验'}</button>}
-          </div>
+            {check&&check.manualSupported!==false&&<button className="ops-verify-action" title="轻量复验：文本 + 图像" disabled={verifying||check.running||!checkFresh} onClick={()=>void verifyService()}>{verifying||check.running?'验收中…':'运行复验'}</button>}
+          </div>}
           {check&&verifyMessage&&<p role="status" className="ops-note">{verifyMessage}</p>}
           {check?.storageError&&<p role="alert" className="ops-note">{check.storageError}</p>}
           {!usable&&<p className="ops-note">{old?'监控未就绪或已过期':'该服务未匹配到新鲜的 Prometheus 采集目标'}；窗口指标保留不可用状态。</p>}

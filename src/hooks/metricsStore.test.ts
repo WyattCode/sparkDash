@@ -8,6 +8,17 @@ import { makeSpark } from "../testing/fixtures";
 
 describe("metricsStore timestamp contract", () => {
   beforeEach(_resetStore);
+  it('separates model/backend history and does not append unavailable LLM zeros',()=>{
+    const spark=makeSpark();spark.llmPorts=[8888];
+    Object.assign(spark.metrics.llm[0],{backend:'sglang',modelId:'old',available:true,generationTps:100});
+    ingestSnapshots([spark],1000);
+    Object.assign(spark.metrics.llm[0],{backend:'tensorfold',modelId:'GLM',generationTps:20});
+    ingestSnapshots([spark],2000);
+    expect(getMetricHistorySamples(spark.id,'llm:8888.tps')).toEqual([{at:2000,value:20}]);
+    spark.metrics.llm[0].available=false;ingestSnapshots([spark],3000);
+    expect(getMetricHistorySamples(spark.id,'llm:8888.tps')).toHaveLength(1);
+    expect(getMetricHistorySamples(spark.id,'gpu.usage')).toHaveLength(3);
+  });
 
   it.each([1_000, 2_000, 5_000])("preserves a %sms source cadence", (interval) => {
     const spark = makeSpark();

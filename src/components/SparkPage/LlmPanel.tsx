@@ -278,6 +278,7 @@ function BackendBadge({ backend }: { backend: string | null }) {
     vllm: "vLLM",
     "llama.cpp": "llama.cpp",
     sglang: "SGLang",
+    tensorfold: "TensorFold",
     ds4: "ds4",
     exl3: "EXL3",
     q27: "q27",
@@ -728,7 +729,7 @@ export function LlmPanel({
             className="flex items-center justify-between"
             title="首个输出 Token 之前，模型读取提示词并建立 KV 缓存的吞吐量。仅打开历史聊天不会触发 GPU 计算；发送或重新生成才会提交提示词。前缀缓存命中时计算较少，数值可能接近零；较长的冷预填充会持续显示，直到开始解码。"
           >
-            <span className="text-xs text-muted">预填充 tok/s</span>
+            <span className="text-xs text-muted" title={llm?.backend==='tensorfold'?'原生输入 Token 在请求结束后更新，非实时 GPU 预填充速度':undefined}>{llm?.backend==='tensorfold'?'完成输入 tok/s':'预填充 tok/s'}</span>
             <div className="flex items-center gap-2">
               <Sparkline data={prefillHistory} color="var(--color-text)" height={24} />
               <div className="text-right">
@@ -786,8 +787,8 @@ export function LlmPanel({
             </>
           )}
 
-          <LlmTrendChart sparkId={sparkId} llmPort={llmPort} />
-          <LlmDailyChart sparkId={sparkId} llmPort={llmPort} />
+          <LlmTrendChart sparkId={sparkId} llmPort={llmPort} completedInput={llm?.backend==='tensorfold'} />
+          {llm?.backend!=='tensorfold'&&<LlmDailyChart sparkId={sparkId} llmPort={llmPort} />}
 
           <div className="grid grid-cols-4 gap-2 border-t border-border pt-3">
             <div className="space-y-0.5">
@@ -842,13 +843,13 @@ export function LlmPanel({
                       onMouseLeave={startEngineInfoTimer}
                       className="absolute left-0 top-full z-10 mt-1 w-56 rounded-md border border-border bg-surface-elevated px-3 py-2 text-left text-[11px] font-normal normal-case text-text shadow-lg"
                     >
-                      活跃：正在处理或可接受请求。休眠：当前空闲，GPU 内存已释放，等待下次请求。
+                      {llm?.backend==='tensorfold'?'TensorFold 原生指标提供运行与排队请求，不提供 GPU 休眠状态；不根据内存占用推断。':'活跃：正在处理或可接受请求。休眠：当前空闲，GPU 内存已释放，等待下次请求。'}
                     </div>
                   )}
                 </button>
               </div>
               <div className="font-tabular text-sm text-text">
-                {llm?.gpuMemoryUtilization != null
+                {llm?.backend==='tensorfold' ? !llm.available?'不可用':llm.requestsRunning==null?'未提供':llm.requestsRunning>0?'处理中':(llm.requestsWaiting??0)>0?'有排队':'空闲' : llm?.gpuMemoryUtilization != null
                   ? llm.gpuMemoryUtilization === 0
                     ? "休眠"
                     : "活跃"
@@ -858,7 +859,7 @@ export function LlmPanel({
             <div className="space-y-0.5">
               <div className="text-[10px] uppercase tracking-wide text-muted">累计生成</div>
               <div className="font-tabular text-sm text-text">
-                {llm && llm.totalOutputTokens > 0
+                {llm && llm.available && llm.totalOutputTokens >= 0
                   ? llm.totalOutputTokens.toLocaleString()
                   : "—"}
               </div>
@@ -871,6 +872,18 @@ export function LlmPanel({
               <div><div className="text-xs text-muted">KV 缓存池</div><div className="font-tabular text-sm text-text">{llm.available && llm.kvCacheGb != null ? `${llm.kvCacheGb.toFixed(2)} GB` : '—'}</div></div>
               <div><div className="text-xs text-muted">模型权重驻留</div><div className="font-tabular text-sm text-text">{llm.available && llm.weightsGb != null ? `${llm.weightsGb.toFixed(2)} GB` : '—'}</div></div>
               <p className="text-[10px] text-muted sm:col-span-3">引擎上报的单个调度器内存口径，非四机总和；未上报显示 —。KV 占用比例不等于整机共享内存占用。</p>
+            </div>
+          )}
+          {llm?.backend === 'tensorfold' && (
+            <div className="grid grid-cols-2 gap-3 border-t border-border pt-3 lg:grid-cols-5" aria-label="TensorFold 原生指标">
+              {[
+                ['共享 KV 池占用',llm.available && llm.kvCacheUsage != null ? `${(llm.kvCacheUsage*100).toFixed(1)}%` : '—'],
+                ['处理中 / 排队中',llm.available ? `${formatCount(llm.requestsRunning)} / ${formatCount(llm.requestsWaiting)}` : '—'],
+                ['首 Token P95 · 启动以来',llm.available && llm.ttftP95Seconds != null ? `${llm.ttftP95Seconds.toFixed(3)} s` : '暂无样本'],
+                ['总耗时 P95 · 启动以来',llm.available && llm.e2eP95Seconds != null ? `${llm.e2eP95Seconds.toFixed(3)} s` : '暂无样本'],
+                ['DFlash2 草稿接受率',llm.available && llm.mtpAcceptanceRate != null ? `${(llm.mtpAcceptanceRate*100).toFixed(1)}%` : '暂无样本'],
+              ].map(([label,value])=><div key={label} className={label.startsWith('DFlash2')?'col-span-2 lg:col-span-1':undefined}><div className="text-xs text-muted">{label}</div><div className="font-tabular text-sm text-text">{value}</div></div>)}
+              <p className="text-[10px] text-muted col-span-2 lg:col-span-5">四节点共同运行一个模型；KV 为共享 Token 池，非四机内存占用。输入计数在请求结束后更新，不代表实时 GPU 预填充速度；Token 间隔、抢占次数与缓存层级未提供，已隐藏。</p>
             </div>
           )}
           {llm && (llm.backend === "vllm" || llm.backend === "q27") && (

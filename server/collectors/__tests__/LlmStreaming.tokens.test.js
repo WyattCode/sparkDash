@@ -18,7 +18,14 @@ import {
   sleep,
   closeLlmStreamAgent,
   runStreamingRequest,
+  readServerGenerationTokens,
 } from "../LlmStreaming.js";
+
+test('TensorFold live output counter is preferred without probing its health endpoint',async()=>{
+  const original=globalThis.fetch;const calls=[];
+  globalThis.fetch=async(url)=>{calls.push(url);return {ok:true,text:async()=> 'tensorfold_health:completion_tokens_total 200\ntensorfold:generation_tokens_total 150\n'};};
+  try{assert.equal(await readServerGenerationTokens('http://fixture'),200);assert.deepEqual(calls,['http://fixture/metrics']);}finally{globalThis.fetch=original;}
+});
 
 test("sleep removes its abort listener after normal completion", async () => {
   const controller = new AbortController();

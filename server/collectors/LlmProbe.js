@@ -382,6 +382,7 @@ export class LlmProbe {
    */
   async _classifyOpenAIBackend(ownedBy) {
     if (typeof ownedBy === "string") {
+      if (/tensorfold/i.test(ownedBy)) return "tensorfold";
       if (/ds4/i.test(ownedBy)) return "ds4";
       if (/sglang/i.test(ownedBy)) return "sglang";
       if (/exl3/i.test(ownedBy)) return "exl3";
@@ -413,6 +414,7 @@ export class LlmProbe {
   /** @param {unknown} data */
   static _healthLooksLikeExl3(data) {
     if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+    if (data.backend === "tensorfold") return false;
     if (data.backend === "exl3") return true;
     // tools/serve_openai.py: { ok, busy } even before token counters existed.
     return data.ok === true && typeof data.busy === "boolean";
@@ -524,7 +526,8 @@ let modelsOk = false;
 
     // Self-heal backend from owned_by before branching (cheap, no extra HTTP)
     if (typeof owned === "string") {
-      if (/ds4/i.test(owned)) this.backendType = "ds4";
+      if (/tensorfold/i.test(owned)) this.backendType = "tensorfold";
+      else if (/ds4/i.test(owned)) this.backendType = "ds4";
       else if (/sglang/i.test(owned) && this.backendType !== "ds4") {
         this.backendType = "sglang";
       } else if (/exl3/i.test(owned) && this.backendType !== "ds4") {
@@ -597,7 +600,10 @@ let modelsOk = false;
       const metricsRes = await this._fetch(`${this.baseUrl}/metrics`);
       if (metricsRes.ok) {
         const txt = await metricsRes.text();
-        if (
+        if (txt.includes("tensorfold:")) {
+          this.backendType = "tensorfold";
+          this._applyTensorFoldMetrics(txt, dtSec);
+        } else if (
           this.backendType === "ds4" ||
           LlmProbe._metricsLookLikeDs4(txt)
         ) {
@@ -877,10 +883,49 @@ let modelsOk = false;
   }
 
   /**
-   * Apply stock vLLM Prometheus /metrics (tok/s + inference tiles).
+   * Map TensorFold native metrics to common inference fields.
    * @param {string} txt
    * @param {number} dtSec
    */
+  _applyTensorFoldMetrics(txt, dtSec) {
+    const get = name => {
+      const m = txt.match(new RegExp('^' + name + ' ([0-9.eE+\\-]+)$', 'm'));
+      const value = m ? Number(m[1]) : null;
+      return value != null && Number.isFinite(value) && value >= 0 ? value : null;
+    };
+    const output = get('tensorfold_health:completion_tokens_total');
+    const input = get('tensorfold:prompt_tokens_total');
+    if(output == null || input == null) throw new Error('TensorFold token counters unavailable');
+    this.generationTps=0;
+    this.prefillTps=0;
+    let mapped = txt.replace(/tensorfold:requests_running/g,'vllm:num_requests_running')
+      .replace(/tensorfold:requests_waiting/g,'vllm:num_requests_waiting')
+      .replace(/tensorfold:request_latency_seconds/g,'vllm:e2e_request_latency_seconds')
+      .replace(/tensorfold:mtp_accepted_total/g,'vllm:spec_decode_num_accepted_tokens_total')
+      .replace(/tensorfold:mtp_drafted_total/g,'vllm:spec_decode_num_draft_tokens_total')
+      .replace(/tensorfold:/g,'vllm:');
+    // The live health counter is sufficient; do not require the separate
+    // completed-request generation counter merely to replace its text line.
+    mapped = mapped.replace(/^vllm:generation_tokens_total(?:\{[^}]*\})?\s+[^\r\n]+/gm,'') + '\nvllm:generation_tokens_total ' + output + '\n';
+    if (this._tensorfoldModel !== this.modelId || (output != null && output < this.lastTokenCounts.output) || (input != null && input < this.lastTokenCounts.input)) {
+      this.lastTokenCounts = {input: input ?? 0, output: output ?? 0};
+      this.lastTtftSum = null;this.lastTtftCount = null;dtSec=0;
+    }
+    this._tensorfoldModel=this.modelId;
+    const previousInput=this.lastTokenCounts.input;
+    this._applyVllmMetrics(mapped, dtSec);
+    // Native prompt counters advance at request completion. This is observed
+    // input accounting rate, NOT a GPU prefill speed inferred from TTFT.
+    this.prefillTps=input != null && dtSec > 0 && dtSec < 10 ? Math.max(0,(input-previousInput)/dtSec) : 0;
+    if (dtSec === 0) {this.generationTps=0;this.prefillTps=0;}
+    this.contextLength=get('tensorfold_health:context_length');
+    this.slotsTotal=get('tensorfold_health:streams_max') ?? 0;
+    const pool=get('tensorfold_health:pool_tokens'), free=get('tensorfold_health:pool_free_tokens');
+    this.kvCacheUsage=pool > 0 && free != null && free <= pool ? (pool-free)/pool : null;
+    this.tokenCounters=output == null ? null : {source:'tensorfold:health+prometheus',output,prompt:input,cached:get('tensorfold_health:cached_tokens_total')};
+    this.gpuMemoryUtilization=null;
+  }
+
   _applyVllmMetrics(txt, dtSec) {
     const promptTokens = this._getVllmMetric(txt, "prompt_tokens_total");
     const genTokens = this._getVllmMetric(txt, "generation_tokens_total");

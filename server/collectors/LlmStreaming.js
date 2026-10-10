@@ -151,6 +151,10 @@ export async function readServerGenerationTokens(baseUrl, opts = {}) {
         /^vllm:generation_tokens_total(?:\{[^}]*\})?\s+([\d.eE+-]+)\s*$/gm
       );
       if (vllm != null) return vllm;
+      const tensorfold = fromSeries(
+        /^tensorfold_health:completion_tokens_total(?:\{[^}]*\})?\s+([\d.eE+-]+)\s*$/gm
+      );
+      if (tensorfold != null) return tensorfold;
       const sglang =
         fromSeries(
           /^sglang:generation_tokens_total(?:\{[^}]*\})?\s+([\d.eE+-]+)\s*$/gm
@@ -183,7 +187,7 @@ export async function readServerGenerationTokens(baseUrl, opts = {}) {
     if (res.ok) {
       const data = await res.json();
       const v = Number(data?.completion_tokens_total);
-      if (Number.isFinite(v) && data?.backend === "exl3") return v;
+      if (Number.isFinite(v) && ["exl3","tensorfold"].includes(data?.backend)) return v;
       if (Number.isFinite(v) && typeof data?.busy === "boolean") return v;
     }
   } catch {
