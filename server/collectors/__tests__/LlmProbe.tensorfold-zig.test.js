@@ -51,3 +51,12 @@ test('authenticated Zig minimal health still collects protected native metrics',
  p._fetch=async url=>({ok:true,status:200,json:async()=>String(url).endsWith('/v1/models')?{data:[{id:'Qwen3.8-Flash-Next',owned_by:'tensorfold'}]}:{status:'ok'},text:async()=> 'tensorfold:requests_running 3\ntensorfold:requests_waiting 1\ntensorfold:generation_tokens_total 50'});
  const s=await p._probeOpenAICompatible();assert.equal(s.requestsRunning,3);assert.equal(s.requestsWaiting,1);assert.equal(s.totalOutputTokens,50);assert.equal(s.slotsTotal,null);
 });
+
+
+test('minimal health retains a reported capacity but live health without it does not invent one',async()=>{
+ const p=new LlmProbe({lanIp:'10.77.0.1'},8888);p.serverIsOpenAI=true;
+ let health={status:'ok',max_batch_size:16};
+ p._fetch=async url=>({ok:true,status:200,json:async()=>String(url).endsWith('/v1/models')?{data:[{id:'Next',owned_by:'tensorfold'}]}:health,text:async()=>''});
+ let s=await p._probeOpenAICompatible();assert.equal(s.slotsTotal,16);
+ health={status:'ok',live:{connections:0,waiting:0}};s=await p._probeOpenAICompatible();assert.equal(s.slotsTotal,null);
+});

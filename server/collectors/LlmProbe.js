@@ -529,7 +529,7 @@ export class LlmProbe {
             this.requestsWaiting = waiting;
             this.requestsRunning = connections == null || waiting == null || waiting > connections ? null : connections - waiting;
             this.slotsActive = this.requestsRunning ?? 0;
-            if (!health.live) this.slotsTotal = null;
+            this.slotsTotal = Number.isInteger(health.max_batch_size) && health.max_batch_size > 0 ? health.max_batch_size : null;
             const rate = value => Number.isFinite(value) && value >= 0 ? value : null;
             this.generationTps = connections === 0 ? 0 : rate(live.decode_tokens_per_second);
             this.prefillTps = connections === 0 ? 0 : rate(live.prefill_tokens_per_second);

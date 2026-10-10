@@ -61,6 +61,22 @@ describe("useSnapshot connection lifecycle", () => {
     expect(getMetricHistorySamples('head','llm:8888.tps')).toEqual(before);
     expect(before.length).toBeGreaterThan(0);
   });
+  it('loads healthy TensorFold with missing rates, skips history, and records true zero on recovery', () => {
+    render(<Probe/>);const socket=MockSocket.instances[0];const spark=makeSpark('head');
+    Object.assign(spark.metrics.llm[0],{backend:'tensorfold',generationTps:null,prefillTps:null});
+    act(()=>{socket.open();socket.emit({type:'snapshot',generatedAt:50000,sparks:[spark]});});
+    expect(readProbe()).toMatchObject({count:1,connected:true,error:null});
+    expect(getMetricHistorySamples('head','llm:8888.tps')).toHaveLength(0);
+    expect(getMetricHistorySamples('head','llm:8888.prefill')).toHaveLength(0);
+    Object.assign(spark.metrics.llm[0],{generationTps:0,prefillTps:100});
+    act(()=>socket.emit({type:'snapshot',generatedAt:50001,sparks:[spark]}));
+    expect(getMetricHistorySamples('head','llm:8888.tps')).toEqual([{at:50001,value:0}]);
+    expect(getMetricHistorySamples('head','llm:8888.prefill')).toEqual([{at:50001,value:100}]);
+    Object.assign(spark.metrics.llm[0],{generationTps:null,prefillTps:null});
+    act(()=>socket.emit({type:'snapshot',generatedAt:50002,sparks:[spark]}));
+    expect(readProbe().error).toBeNull();
+    expect(getMetricHistorySamples('head','llm:8888.tps')).toHaveLength(1);
+  });
   beforeEach(() => {
     _resetStore();
     MockSocket.instances = [];
