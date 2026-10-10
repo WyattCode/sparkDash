@@ -44,3 +44,15 @@
  -webkit-mask:url('/atom-device.svg?v=66a37b93a5') center / 100% 100% no-repeat;
  mask:url('/atom-device.svg?v=66a37b93a5') center / 100% 100% no-repeat;
 }
+/* Match connected nodes while retaining the original four-column chassis size.
+   Small fleets stay centered; additional nodes form shallow overlapping rows. */
+.dgx-hero__silhouette {
+ --device-width:calc((100% - 27px) / 4);
+}
+.dgx-hero__silhouette i {
+ position:absolute;
+ width:var(--device-width);
+ height:100%;
+ top:calc(var(--device-row, 0) * 12px);
+ left:calc((100% - (var(--device-columns, 4) * var(--device-width) + (var(--device-columns, 4) - 1) * 9px)) / 2 + var(--device-column, 0) * (var(--device-width) + 9px));
+}
