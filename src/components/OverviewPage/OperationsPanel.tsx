@@ -157,7 +157,7 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
           <header className="ops-service-header">
             <div className="ops-service-identity">
               <h3>{llm.modelId||'模型信息未采集'}</h3>
-              <div className="ops-service-meta"><span>{s.name}</span><span>{llm.backend||'未知后端'} · 端口 {port}</span><span>上下文 {llm.contextLength??'未采集'}</span></div>
+              <div className="ops-service-meta"><span>{s.name}</span><span>{llm.backend||'未知后端'} · 端口 {port}</span>{llm.contextLength!=null&&<span>上下文 {llm.contextLength}</span>}</div>
             </div>
             <button className="ops-service-link" onClick={()=>onSelect?.(s.id)}>服务详情</button>
           </header>
@@ -166,11 +166,15 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
             <Stat label="输入吞吐" value={stale||!s.online||!llm.available?'不可用':number(finite(llm.prefillTps),' tok/s')} note="预填充，与输出分开统计"/>
             <Stat label="处理中 / 排队中" value={`${formatCount(v('running'))} / ${formatCount(v('waiting'))}`} note="单位：个请求 · 非模型数或人数"/>
             {!native&&<Stat label="推理接口 HTTP 成功率" value={native?'后端未提供':usable?percent(v('httpOk'),httpTotal):'未采集'} note={native?'TensorFold 未暴露推理 HTTP 状态计数；不能用健康探测代替':`过去 30 分钟 · 响应计数：${formatEstimatedCount(httpTotal)} · 不含健康探测；不代表流式完成率`}/>}
-            {(['ttft','itl','e2e'] as const).map((k,j)=>native&&k==='itl'?null:<Stat key={k} label={['首 Token 延迟 P95','Token 间延迟 P95','总耗时 P95'][j]} value={native&&k==='itl'?'后端未提供':latency(v(k),v(`${k}Samples`))} note={native&&k==='itl'?'TensorFold 未暴露 Token 间延迟直方图':`服务端 · ${native?'服务启动以来':'过去 30 分钟'} · ${sampleHint(v(`${k}Samples`))}${k==='itl'?'（Token 间隔）':''}`}/>)}
+            {(['ttft','itl','e2e'] as const).map((k,j)=>native&&(k==='itl'||v(k)==null)?null:<Stat key={k} label={['首 Token 延迟 P95','Token 间延迟 P95','总耗时 P95'][j]} value={native&&k==='itl'?'后端未提供':latency(v(k),v(`${k}Samples`))} note={native&&k==='itl'?'TensorFold 未暴露 Token 间延迟直方图':`服务端 · ${native?'服务启动以来':'过去 30 分钟'} · ${sampleHint(v(`${k}Samples`))}${k==='itl'?'（Token 间隔）':''}`}/>)}
             {!native&&<Stat label="排队延迟 P95" value={native?'后端未提供':latency(v('queue'),v('queueSamples'))} note={native?'TensorFold 未暴露排队延迟直方图':`过去 30 分钟 · ${sampleHint(v('queueSamples'))}`}/>}
-            <Stat label="前缀缓存命中率" value={v('cache')==null?'暂无样本':number((v('cache') as number)*100,'%')} note={native?'服务启动以来 · 缓存 Token / 输入 Token':'过去 30 分钟 · 命中 / 查询'}/>
+            {(!native||v('cache')!=null)&&<Stat label="前缀缓存命中率" value={v('cache')==null?'暂无样本':number((v('cache') as number)*100,'%')} note={native?'服务启动以来 · 缓存 Token / 输入 Token':'过去 30 分钟 · 命中 / 查询'}/>}
             {native&&v('poolUsage')!=null&&<Stat label="KV 缓存池占用率" value={number(v('poolUsage')!*100,'%')} note="实时 · Token 槽位使用率，非显存占用"/>}
             {native&&v('mtp')!=null&&<Stat label="草稿 Token 接受率" value={number(v('mtp')!*100,'%')} note="服务启动以来 · 接受 / 已验证草稿 Token"/>}
+            {native&&(['prefill','decode','tpot'] as const).map((key,index)=>v(key)==null?null:<Stat key={key} label={['预填充耗时 P95','解码耗时 P95','每输出 Token 耗时 P95'][index]} value={latency(v(key),v(`${key}Samples`))} note={`服务启动以来 · ${sampleHint(v(`${key}Samples`))}${key==='tpot'?' · 单请求平均，非 Token 间隔':''}`}/>)}
+            {native&&v('kv')!=null&&<Stat label="流上下文占用率" value={number(v('kv')!*100,'%')} note="实时 · 单流缓存 / 上下文窗口，非全局缓存池"/>}
+            {native&&v('completed')!=null&&<Stat label="已完成请求" value={formatCount(v('completed'))} note="服务启动以来 · 响应耗时样本计数，非 HTTP 成功数"/>}
+            {native&&v('disconnected')!=null&&<Stat label="客户端中断" value={formatCount(v('disconnected'))} note="服务启动以来 · 回复结束前客户端离开"/>}
             {(check?.inference||check?.warmup)&&<Stat label="推理验收 / 预热" value={native&&!check?.inference?'尚未执行独立验收':recordLabel(check?.inference,checkFresh&&check?.current?.inference,'inference')} tone={verificationTone(check?.inference,checkFresh&&check?.current?.inference)} note={native&&!check?.warmup?(checkFresh?'模型 API 可达；尚未导入预热实测记录':'尚未导入预热实测记录'):recordLabel(check?.warmup,checkFresh&&check?.current?.warmup,'warmup')+' · 详见验收记录'}/>}
             {check?.vision&&<Stat label="多模态能力" value={native&&!check?.vision?'图像输入尚未核验':recordLabel(check?.vision,checkFresh&&check?.current?.vision,'vision')} tone={verificationTone(check?.vision,checkFresh&&check?.current?.vision)} note="仅核验图像输入；不代表音频、视频或完整视觉质量评测"/>}
           </div>

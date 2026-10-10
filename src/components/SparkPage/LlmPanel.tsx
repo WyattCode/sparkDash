@@ -674,6 +674,19 @@ export function LlmPanel({
                 : `端口 ${llmPort} 未加载模型`}
             </p>
           </div>
+          {llm?.backend === 'tensorfold' && <div className="grid grid-cols-2 gap-2 border-t border-border pt-3 sm:grid-cols-4">
+            {[
+              ['流上下文占用率',llm.kvCacheUsage,100,'%'],
+              ['首 Token 延迟 P95',llm.ttftP95Seconds,1,' s'],
+              ['总耗时 P95',llm.e2eP95Seconds,1,' s'],
+              ['草稿 Token 接受率',llm.mtpAcceptanceRate,100,'%'],
+              ['抢占次数',llm.preemptionsTotal,1,''],
+            ].filter(row=>row[1]!=null).map(([label,value,multiplier,unit])=><div className="space-y-0.5" key={String(label)}>
+              <div className="text-[10px] text-muted">{label}</div>
+              <div className="font-tabular text-sm text-text">{((value as number)*(multiplier as number)).toLocaleString('zh-CN',{maximumFractionDigits:3})}{unit}</div>
+            </div>)}
+          </div>}
+
           <LlmLaunchers
             sparkId={sparkId}
             llmPort={llmPort}

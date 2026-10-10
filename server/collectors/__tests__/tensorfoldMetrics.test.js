@@ -88,3 +88,12 @@ test('native pool utilization and draft acceptance validate denominators and pre
  assert.equal(parse(100,100,20,0).poolUsage,0);assert.equal(parse(100,100,20,0).mtp,0);
  for(const m of [parse(0,0,0,0),parse(100,101,20,21),parse(100,'NaN',20,'NaN'),parseTensorfoldMetrics('')]){assert.equal(m.poolUsage,null);assert.equal(m.mtp,null);}
 });
+
+test('new native timing histograms stay distinct from inter-token latency and aliases are not double-counted',()=>{
+ const names=['request_prefill_seconds','request_decode_seconds','request_time_per_output_token_seconds'];
+ const text=names.map(name=>`tensorfold:${name}_bucket{le="1"} 10\ntensorfold:${name}_bucket{le="+Inf"} 10\ntensorfold:${name}_count 10`).join('\n');
+ const m=parseTensorfoldMetrics(text+'\ntensorfold:kv_cache_usage_ratio{pool="0"} 0\ntensorfold:mtp_drafted_total 100\ntensorfold:mtp_accepted_total 60\ntensorfold:spec_decode_num_draft_tokens_total 100\ntensorfold:spec_decode_num_accepted_tokens_total 60\ntensorfold:client_disconnections_total 0');
+ for(const key of ['prefill','decode','tpot']){assert.equal(m[key],.95);assert.equal(m[key+'Samples'],10);}
+ assert.equal(m.itl,null);assert.equal(m.kv,0);assert.equal(m.mtp,.6);assert.equal(m.disconnected,0);assert.equal(m.poolUsage,null);assert.equal(m.cache,null);
+ assert.equal(parseTensorfoldMetrics('tensorfold:kv_cache_usage_ratio 1.5').kv,null);
+});

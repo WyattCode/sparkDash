@@ -470,7 +470,8 @@ export class LlmProbe {
     this.lastProbeTime = now;
 
     // Model info from /v1/models — 401/403 means protected; other failure = down
-let modelsOk = false;
+    let modelsOk = false;
+    let modelContextLength = null;
     let owned = null;
     let servedModelId = null;
     try {
@@ -488,8 +489,9 @@ let modelsOk = false;
         // Drop HF hub cache paths from modelPath if /v1/models id was a cache dir
         if (isHfHubCachePath(model?.id)) this.modelPath = null;
         // ds4-server uses context_length; vLLM uses max_model_len
-        this.contextLength =
-          model?.max_model_len ?? model?.context_length ?? this.contextLength;
+        const modelContext = model?.max_model_len ?? model?.context_length;
+        modelContextLength = Number.isSafeInteger(modelContext) && modelContext > 0 ? modelContext : null;
+        this.contextLength = modelContextLength ?? this.contextLength;
         owned = model?.owned_by;
       }
     } catch {}
@@ -516,6 +518,38 @@ let modelsOk = false;
         const healthRes = await this._fetch(`${this.baseUrl}/health`);
         if (healthRes.ok) {
           const health = await healthRes.json().catch(() => null);
+          if (this.backendType === "tensorfold" && health?.status === "ok" &&
+              health.live && typeof health.live === "object") {
+            // This backend does not expose context in health; never retain an old model's capacity.
+            this.contextLength = modelContextLength;
+            const live = health.live;
+            const count = value => Number.isInteger(value) && value >= 0 ? value : null;
+            const connections = count(live.connections);
+            const waiting = count(live.waiting);
+            this._applyExl3Health({busy: connections > 0, streams: {max: health.max_batch_size}}, dtSec);
+            this.requestsWaiting = waiting;
+            this.requestsRunning = connections == null || waiting == null ? null : Math.max(0, connections - waiting);
+            this.slotsActive = this.requestsRunning ?? 0;
+            const rate = value => Number.isFinite(value) && value >= 0 ? value : null;
+            this.generationTps = connections > 0 ? rate(live.decode_tokens_per_second) : 0;
+            this.prefillTps = connections > 0 ? rate(live.prefill_tokens_per_second) : 0;
+            this.totalOutputTokens = null; // Zig /health exposes rates, not lifetime counters.
+            try {
+              const res = await this._fetch(`${this.baseUrl}/metrics`);
+              if (res.ok) {
+                const m = parseTensorfoldMetrics(await res.text());
+                this.totalOutputTokens = m.completionTotal;
+                if (m.running != null) this.requestsRunning = m.running;
+                if (m.waiting != null) this.requestsWaiting = m.waiting;
+                this.slotsActive = this.requestsRunning ?? 0;
+                this.ttftP95Seconds = m.ttft; this.e2eP95Seconds = m.e2e;
+                this.prefixCacheHitRate = m.cache; this.mtpAcceptanceRate = m.mtp;
+                this.preemptionsTotal = m.preemptions;
+                this.kvCacheUsage = m.kv;
+              }
+            } catch { /* Optional metrics must not hide the healthy model. */ }
+            return this._getSnapshot();
+          }
           if (LlmProbe._healthLooksLikeExl3(health)) {
             this.backendType = health.backend === "tensorfold" ? "tensorfold" : "exl3";
             this._applyExl3Health(health, dtSec);
@@ -528,7 +562,7 @@ let modelsOk = false;
                   this.slotsActive = this.requestsRunning;
                   this.ttftP95Seconds = m.ttft; this.e2eP95Seconds = m.e2e;
                   this.prefixCacheHitRate = m.cache; this.mtpAcceptanceRate = m.mtp;
-                  this.kvCacheUsage = m.kv == null ? null : Math.min(100, m.kv * 100);
+                  this.kvCacheUsage = m.kv;
                 }
               } catch { /* Optional metrics must not hide the healthy model. */ }
             }

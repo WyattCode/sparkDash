@@ -38,18 +38,25 @@ export function parseTensorfoldMetrics(text) {
   }
   const ttft=histogram('tensorfold:time_to_first_token_seconds');
   const e2e=histogram('tensorfold:request_latency_seconds');
+  const prefill=histogram('tensorfold:request_prefill_seconds');
+  const decode=histogram('tensorfold:request_decode_seconds');
+  const tpot=histogram('tensorfold:request_time_per_output_token_seconds');
   const cached=sum('tensorfold_health:cached_tokens_total');
   const prompt=sum('tensorfold:prompt_tokens_total');
   const drafted=sum('tensorfold:mtp_drafted_total'), accepted=sum('tensorfold:mtp_accepted_total');
   const poolTotal=sum('tensorfold_health:pool_tokens'), poolFree=sum('tensorfold_health:pool_free_tokens');
   const validPool=poolTotal>0&&poolFree!=null&&poolFree<=poolTotal;
   return {
+    completionTotal:sum('tensorfold:generation_tokens_total'), preemptions:sum('tensorfold:preemptions_total'),
+    disconnected:sum('tensorfold:client_disconnections_total'), completed:e2e.samples,
+    prefill:prefill.p95,prefillSamples:prefill.samples,decode:decode.p95,decodeSamples:decode.samples,
+    tpot:tpot.p95,tpotSamples:tpot.samples,
     running:sum('tensorfold:requests_running'), waiting:sum('tensorfold:requests_waiting'),
     ttft:ttft.p95,ttftSamples:ttft.samples,e2e:e2e.p95,e2eSamples:e2e.samples,
     cache:cached!=null&&prompt>0&&cached<=prompt?cached/prompt:null,
     cacheHits:cached,cacheQueries:prompt,
     // Per-pool ratios cannot be summed into a global utilization percentage.
-    kv:values.get('tensorfold:kv_cache_usage_ratio')?.length===1 ? values.get('tensorfold:kv_cache_usage_ratio')[0].value : null,
+    kv:values.get('tensorfold:kv_cache_usage_ratio')?.length===1 && values.get('tensorfold:kv_cache_usage_ratio')[0].value<=1 ? values.get('tensorfold:kv_cache_usage_ratio')[0].value : null,
     mtp:drafted>0&&accepted!=null&&accepted<=drafted?accepted/drafted:null,
     poolUsage:validPool?(poolTotal-poolFree)/poolTotal:null,
     poolTotal:validPool?poolTotal:null,poolUsed:validPool?poolTotal-poolFree:null,
