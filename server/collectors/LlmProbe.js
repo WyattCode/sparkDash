@@ -518,11 +518,10 @@ export class LlmProbe {
         const healthRes = await this._fetch(`${this.baseUrl}/health`);
         if (healthRes.ok) {
           const health = await healthRes.json().catch(() => null);
-          if (this.backendType === "tensorfold" && health?.status === "ok" &&
-              health.live && typeof health.live === "object") {
+          if (this.backendType === "tensorfold" && health?.status === "ok") {
             // This backend does not expose context in health; never retain an old model's capacity.
             this.contextLength = modelContextLength;
-            const live = health.live;
+            const live = health.live ?? {};
             const count = value => Number.isInteger(value) && value >= 0 ? value : null;
             const connections = count(live.connections);
             const waiting = count(live.waiting);
@@ -530,6 +529,7 @@ export class LlmProbe {
             this.requestsWaiting = waiting;
             this.requestsRunning = connections == null || waiting == null || waiting > connections ? null : connections - waiting;
             this.slotsActive = this.requestsRunning ?? 0;
+            if (!health.live) this.slotsTotal = null;
             const rate = value => Number.isFinite(value) && value >= 0 ? value : null;
             this.generationTps = connections === 0 ? 0 : rate(live.decode_tokens_per_second);
             this.prefillTps = connections === 0 ? 0 : rate(live.prefill_tokens_per_second);

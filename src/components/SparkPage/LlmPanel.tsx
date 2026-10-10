@@ -727,7 +727,7 @@ export function LlmPanel({
               <Sparkline data={genHistory} color="var(--color-data)" height={24} />
               <div className="text-right">
                 <div className="font-tabular text-sm font-semibold text-text-strong">
-                  {generationTps.toFixed(1)}
+                  {llm?.generationTps == null ? '未采集' : generationTps.toFixed(1)}
                 </div>
                 {genAvg != null && (
                   <div className="font-tabular text-[9px] text-muted">
@@ -746,7 +746,7 @@ export function LlmPanel({
               <Sparkline data={prefillHistory} color="var(--color-text)" height={24} />
               <div className="text-right">
                 <div className="font-tabular text-sm font-semibold text-text">
-                  {prefillTps.toFixed(1)}
+                  {llm?.prefillTps == null ? '未采集' : prefillTps.toFixed(1)}
                 </div>
                 {prefillAvg != null && (
                   <div className="font-tabular text-[9px] text-muted">

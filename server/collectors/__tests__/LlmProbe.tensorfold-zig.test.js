@@ -45,3 +45,9 @@ test('partial or inconsistent live health never fabricates idle throughput or ru
  live={connections:1,waiting:2};s=await p._probeOpenAICompatible();assert.equal(s.requestsRunning,null);assert.equal(s.generationTps,null);
  live={connections:0,waiting:0};s=await p._probeOpenAICompatible();assert.equal(s.requestsRunning,0);assert.equal(s.generationTps,0);
 });
+
+test('authenticated Zig minimal health still collects protected native metrics',async()=>{
+ const p=new LlmProbe({lanIp:'10.77.0.1'},8888);p.serverIsOpenAI=true;
+ p._fetch=async url=>({ok:true,status:200,json:async()=>String(url).endsWith('/v1/models')?{data:[{id:'Qwen3.8-Flash-Next',owned_by:'tensorfold'}]}:{status:'ok'},text:async()=> 'tensorfold:requests_running 3\ntensorfold:requests_waiting 1\ntensorfold:generation_tokens_total 50'});
+ const s=await p._probeOpenAICompatible();assert.equal(s.requestsRunning,3);assert.equal(s.requestsWaiting,1);assert.equal(s.totalOutputTokens,50);assert.equal(s.slotsTotal,null);
+});

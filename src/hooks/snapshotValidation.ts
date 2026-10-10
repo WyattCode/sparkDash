@@ -15,7 +15,7 @@ export function validSnapshots(value: unknown): value is SparkSnapshot[] {
     // before updating either React state or the metric history.
     if (!m.llm.every(l => typeof l.available === 'boolean' &&
       ['generationTps', 'prefillTps'].every(key => l[key] == null
-        ? !l.available
+        ? !l.available || l.backend === 'tensorfold'
         : typeof l[key] === 'number' && Number.isFinite(l[key]) && l[key] >= 0))) return false;
     if (m.gpu != null && (!object(m.gpu) || !object(m.gpu.power) || !object(m.gpu.vram))) return false;
     if (s.telemetry != null) {

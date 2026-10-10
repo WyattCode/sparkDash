@@ -236,3 +236,8 @@ npm run build -- --outDir /tmp/sparkdash-source-build
 
 新版模型适配二次复核：修正 health.live 部分缺失时吞吐被当作 0，以及 waiting > connections 时处理中被钳制为 0 的边界。只有明确 connections=0 才由空闲状态归零；缺失速率保留 null，异常计数保留 null，有效原生 metrics 仍可覆盖 health 回退。
 新增故障输入回归测试；后端 411/411、前端 237/237、类型检查通过。LAN `/v1/models` 正常报告 Qwen3.8-Flash-Next，实际概览和模型详情指标显示通过，三种宽度无溢出、无浏览器错误。归档内部文件、本地 dist 和线上静态文件均与 manifest 校验一致。本轮仅重启 dashboard，未改动模型服务。
+
+### 修复首页停留“正在加载监控”
+模型接口已启用鉴权，health 现在可能仅返回 `status:ok`，缺少 live。保留现有精简 health 适配：继续认证抓取原生 metrics；并发上限和实时吞吐缺失保留 null，已有原生累计计数与延迟仍采集。
+根因：前端 snapshotValidation 将可用 TensorFold 的未知吞吐拒绝为无效快照，因此初次页面没有任何有效数据。校验现在允许 TensorFold 缺失/未知吞吐，但继续拒绝字符串、负数和非有限值；其他后端原有校验不变。详情页未知吞吐显示“未采集”，避免本地默认值 0 被误认为实测。
+生产补丁 `fix-unknown-throughput.py`；入口 `index-atom-9bfc1119bc.js`，恢复快照同步。后端 412 项、前端 238 项测试和类型检查通过；实际首页恢复、详情原生指标可见，三种宽度无溢出、浏览器无运行错误，线上静态文件与快照一致。此时模型 API 已为鉴权接口，此前无密钥 curl 示例不再代表当前鉴权配置。
