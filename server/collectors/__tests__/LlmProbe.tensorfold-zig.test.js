@@ -35,3 +35,13 @@ test('new model never retains old context, resets missing metrics and uses nativ
  let s=await p._probeOpenAICompatible();assert.equal(s.contextLength,null);assert.equal(s.kvCacheUsage,.25);assert.equal(s.requestsRunning,2);assert.equal(s.requestsWaiting,1);assert.equal(s.slotsActive,2);
  metrics='';s=await p._probeOpenAICompatible();assert.equal(s.kvCacheUsage,null);assert.equal(s.totalOutputTokens,null);assert.equal(s.requestsRunning,3);
 });
+
+
+test('partial or inconsistent live health never fabricates idle throughput or running zero',async()=>{
+ const p=new LlmProbe({lanIp:'10.77.0.1'},8888);p.serverIsOpenAI=true;
+ let live={waiting:2};
+ p._fetch=async url=>({ok:true,status:200,json:async()=>String(url).endsWith('/v1/models')?{data:[{id:'Next',owned_by:'tensorfold'}]}:{status:'ok',max_batch_size:16,live},text:async()=>''});
+ let s=await p._probeOpenAICompatible();assert.equal(s.requestsRunning,null);assert.equal(s.generationTps,null);assert.equal(s.prefillTps,null);
+ live={connections:1,waiting:2};s=await p._probeOpenAICompatible();assert.equal(s.requestsRunning,null);assert.equal(s.generationTps,null);
+ live={connections:0,waiting:0};s=await p._probeOpenAICompatible();assert.equal(s.requestsRunning,0);assert.equal(s.generationTps,0);
+});

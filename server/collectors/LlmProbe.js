@@ -528,11 +528,11 @@ export class LlmProbe {
             const waiting = count(live.waiting);
             this._applyExl3Health({busy: connections > 0, streams: {max: health.max_batch_size}}, dtSec);
             this.requestsWaiting = waiting;
-            this.requestsRunning = connections == null || waiting == null ? null : Math.max(0, connections - waiting);
+            this.requestsRunning = connections == null || waiting == null || waiting > connections ? null : connections - waiting;
             this.slotsActive = this.requestsRunning ?? 0;
             const rate = value => Number.isFinite(value) && value >= 0 ? value : null;
-            this.generationTps = connections > 0 ? rate(live.decode_tokens_per_second) : 0;
-            this.prefillTps = connections > 0 ? rate(live.prefill_tokens_per_second) : 0;
+            this.generationTps = connections === 0 ? 0 : rate(live.decode_tokens_per_second);
+            this.prefillTps = connections === 0 ? 0 : rate(live.prefill_tokens_per_second);
             this.totalOutputTokens = null; // Zig /health exposes rates, not lifetime counters.
             try {
               const res = await this._fetch(`${this.baseUrl}/metrics`);
