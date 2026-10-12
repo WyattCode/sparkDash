@@ -170,7 +170,6 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
   const [terminalCount, setTerminalCount] = useState(4);
   const [port, setPort] = useState(() => readPortQuery(8888));
   const [modelId, setModelId] = useState<string | null>(() => readModelQuery());
-  const [engineCapacity,setEngineCapacity]=useState<{backend:string|null;parallel:number|null}|null>(null);
   const [maxTokens, setMaxTokens] = useState(DEFAULT_MAX_TOKENS);
   const [temperature, setTemperature] = useState(DEFAULT_TEMPERATURE);
   const [thinking, setThinking] = useState(false);
@@ -319,7 +318,6 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
           llmList[0];
         const id = llm?.modelId?.trim() || null;
         if (id) setModelId(id);
-        setEngineCapacity({backend:llm?.backend??null,parallel:llm?.available&&Number.isInteger(llm.slotsTotal)&&llm.slotsTotal>0?llm.slotsTotal:null});
       })
       .catch(() => {
         /* keep query / prior modelId */
@@ -758,7 +756,6 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
           <aside className="sw-panel sw-configuration" aria-labelledby="sw-config-title">
             <div className="sw-panel-heading"><h2 id="sw-config-title">测试配置</h2><button className="sw-config-toggle" aria-expanded={settingsOpen} aria-controls="sw-settings" onClick={() => setSettingsOpen(o => !o)}>{settingsOpen ? '收起配置' : '调整配置'}</button></div>
             <div id="sw-settings" hidden={!settingsOpen}>
-            {engineCapacity?.backend==='tensorfold'&&<p className="text-xs text-muted px-4 py-2">TensorFold 四机协同 · {engineCapacity.parallel??'未确认'} 路引擎容量。测试路数是客户端请求数，超过容量可能排队或收到 429；不是四台机器各自运行一个模型。</p>}
             <fieldset className="sw-fields" disabled={controlsLocked}>
               <legend className="sr-only">生成参数</legend>
               <label className="sw-field"><span>服务端口</span><select value={port} onChange={e => changed(() => setPort(Number(e.target.value)))}>{servicePorts.map(p => <option key={p} value={p}>{p}</option>)}</select></label>

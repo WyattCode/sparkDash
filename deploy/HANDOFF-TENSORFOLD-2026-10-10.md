@@ -1,5 +1,9 @@
 # TensorFold compatibility — 2026-10-10
 
+## 2026-10-12 UI follow-up
+
+Removed the concurrent-test capacity explanation and its paragraph element, together with display-only capacity state. Model identity fetching, client request-count options and model parameters are unchanged. Added a regression test for model identity, the retained 32-request option and absence of the removed note/paragraph. Production verification: 251 existing frontend tests, 22 updated Showcase tests, type checking, Chrome 49 checks and Firefox 36 checks passed. Firefox QA required waiting for React's initial theme effect before changing localStorage; this was a test setup race, not a product theme defect. No inference actions or model restarts were performed. The panel-only update was deployed; private operations documents and runtime configuration are excluded.
+
 This update adds TensorFold native monitoring without replacing existing themes or deploying a model.
 
 - Detect TensorFold from model ownership and native metrics; use live completion counters for output throughput and completed prompt counters for input accounting. Input accounting is not GPU prefill speed.
