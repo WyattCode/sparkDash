@@ -474,6 +474,7 @@ export class LlmProbe {
     let modelContextLength = null;
     let owned = null;
     let servedModelId = null;
+    const previousModelId = this.modelId;
     try {
       const modelsRes = await this._fetch(`${this.baseUrl}/v1/models`);
       const auth = this._noteAuthStatus(modelsRes.status);
@@ -510,6 +511,13 @@ export class LlmProbe {
       } else if (/exl3/i.test(owned) && this.backendType !== "ds4") {
         this.backendType = "exl3";
       }
+    }
+
+    const nativeModelChanged = this.backendType === "tensorfold" && previousModelId != null && previousModelId !== this.modelId;
+    if (nativeModelChanged) {
+      this.contextLength = modelContextLength;
+      this.generationTps = null;
+      this.prefillTps = null;
     }
 
     // EXL3 serve_openai.py: live tok/s from /health cumulative counters (no Prometheus).
@@ -552,7 +560,7 @@ export class LlmProbe {
           }
           if (LlmProbe._healthLooksLikeExl3(health)) {
             this.backendType = health.backend === "tensorfold" ? "tensorfold" : "exl3";
-            this._applyExl3Health(health, dtSec);
+            this._applyExl3Health(health, nativeModelChanged ? 0 : dtSec);
             if (this.backendType === "tensorfold") {
               try {
                 const res = await this._fetch(`${this.baseUrl}/metrics`);

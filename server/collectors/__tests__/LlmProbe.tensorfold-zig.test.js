@@ -60,3 +60,13 @@ test('minimal health retains a reported capacity but live health without it does
  let s=await p._probeOpenAICompatible();assert.equal(s.slotsTotal,16);
  health={status:'ok',live:{connections:0,waiting:0}};s=await p._probeOpenAICompatible();assert.equal(s.slotsTotal,null);
 });
+
+
+test('switching back to GLM seeds native counters rather than producing cross-model throughput spikes',async()=>{
+ const p=new LlmProbe({lanIp:'10.77.0.1'},8888);p.serverIsOpenAI=true;p.modelId='Qwen3.8-Flash-Next';
+ p.lastTokenCounts={input:100,output:50};p.lastProbeTime=Date.now()-2000;p.generationTps=123;
+ let completion=40000;
+ p._fetch=async url=>({ok:true,status:200,json:async()=>String(url).endsWith('/v1/models')?{data:[{id:'GLM-5.3-Flash-EXL3',owned_by:'tensorfold'}]}:{ok:true,backend:'tensorfold',busy:true,requests_running:1,context_length:1048576,streams:{max:4},prompt_tokens_total:1000000,completion_tokens_total:completion},text:async()=>''});
+ let s=await p._probeOpenAICompatible();assert.equal(s.modelId,'GLM-5.3-Flash-EXL3');assert.equal(s.contextLength,1048576);assert.equal(s.generationTps,null);assert.equal(s.totalOutputTokens,40000);
+ completion+=40;p.lastProbeTime=Date.now()-2000;s=await p._probeOpenAICompatible();assert.ok(s.generationTps>19&&s.generationTps<=20);assert.equal(s.slotsTotal,4);
+});
