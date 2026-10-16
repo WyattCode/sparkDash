@@ -1,19 +1,19 @@
 {
-  "created_utc": "2026-10-10T22:03:34.048714+00:00",
+  "created_utc": "2026-10-16T11:15:10.901652+00:00",
   "backend_commit": "6c2dbde4d824d41f25dd4b3be289a2da7b3e631a",
   "frontend_origin": "http://192.168.10.233:5555/ (compiled assets; exact source commit unknown)",
-  "archive_sha256": "a20dd9a364df91b646aa230e929bc04f2e943b778e7e44dd5d1f88f3cd5f485f",
+  "archive_sha256": "3ebabe21f445d665770b958b0e7b76a971aae065135d5bfa94f75dd302ac179e",
   "files": {
     "assets/InterVariable-DiVDrmQJ.woff2": "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3",
     "assets/index-ZorAO5mU.css": "fd31543224bf8a3d1fa7dcfab9a51645880252bab45888c9bf7e56c27a01067f",
-    "assets/index-atom-86753a7fbe.js": "86753a7fbe67aa856eaf9b852f8a89db478e2b14d1b955fed1133272e6af90c3",
+    "assets/index-atom-313c05ab5f.js": "313c05ab5f92efd3d00b83548404ccaace6391174f48f6397dba6f748d82182c",
     "atom-device.svg": "66a37b93a5bc65f6be8b3724537ee82af0ad54773764c80a265113789cb3c64b",
     "atom-theme.css": "0b72981815762ace8052e48eeb79ed576391fca13594e710607c1657c911e1de",
     "icons/sparkdash-192.png": "f27b3929fc7eaf3c3f9ba855cc534f78b3f925e30342ad5841ba25dbec473e10",
     "icons/sparkdash-512.png": "18f80a16e549ee3aec9f143a9e382f97cc770876e4cadc3f9e108e9aa526a221",
     "icons/sparkdash-maskable-512.png": "18f80a16e549ee3aec9f143a9e382f97cc770876e4cadc3f9e108e9aa526a221",
     "icons/sparkdash.svg": "fdeec6a7194eb968853c4258982a6692fa2f0c25afd62b18508d7132804182cd",
-    "index.html": "f2f22a7cba2474c3a6d7f6e7968ae511399f912d45a4852312153cb2dd8b4bb5",
+    "index.html": "12b1c325cefe5740e8820a829a9299eeabf3a00a1c029f38270ccb4b01f294e5",
     "manifest.webmanifest": "5fabc9bfd4d75652ef4fef2242bcee8a452db78a4da4dc002fa97023dfd8a9e8"
   },
   "backend_local_patch": "TensorFold native metrics adapter, see HANDOFF-AI-TOP-ATOM.md"
