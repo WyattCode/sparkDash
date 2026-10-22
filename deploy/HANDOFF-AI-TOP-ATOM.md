@@ -263,3 +263,9 @@ GLM 恢复二次复核：补修 TensorFold 模型 id 变化时累计 Token 差�
 缓存计数增加 `tensorfold:prompt_tokens_cached_total` 的优先支持，以旧 `tensorfold_health:cached_tokens_total` 为回退；两者是镜像，不叠加。
 新版原生指标恢复总耗时和预填充/解码/每输出 Token 耗时 P95，按数据自动展示。首页隐藏相对次要的客户端中断卡片（后端计数保留），当前 12 项指标在桌面四列三行、平板/手机两列六行；不支持的 HTTP 成功率、ITL、排队延迟仍隐藏。
 验证：后端 416/416、前端 239/239、类型检查通过；线上模型/上下文/并发上限断言通过，浏览器双设备图、模型详情、1440/768/390 布局无溢出无错误；恢复快照逐文件与线上一致。只重启 dashboard，没有重启模型。生产入口 `index-atom-d6eff94ba6.js`，增量补丁 `trim-disconnection-metric.py`。
+
+### 2026-10-22 二次代码审核修复
+1. 修复健康接口失败后旧吞吐/请求/延迟/缓存指标沿用的问题：每次 TensorFold 探测先清空易变遥测，models 可用仅表示服务目录可访问，不代表旧遥测新鲜。健康失败保留真实未知，不续报旧数值；模型目录内有效上下文可继续使用。
+2. 混合 health 若提供 context_length、models 未提供，采用有效 health 容量回退，避免漏掉 1M。
+3. 混合 health 的 completion_tokens_total 在可选 metrics 失败或缺少该计数时保留；有效 metrics 的 generation_tokens_total 仍优先，绝不跨接口求和。
+已增加健康 503 后的陈旧数据清除，以及可选 metrics 503 时容量/计数回退故障注入测试。后端 418/418、前端 239/239、类型检查通过；实际 12 项指标、四列三行、模型详情及三种宽度通过，无浏览器错误。恢复压缩包、本地和线上静态文件逐项一致。只重启 dashboard，模型服务和页面设计未变更。
