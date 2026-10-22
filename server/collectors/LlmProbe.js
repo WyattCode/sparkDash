@@ -857,7 +857,8 @@ let modelsOk = false;
   async _probeNativeTensorFold(dtSec, modelsContext) {
     for (const key of ['generationTps','prefillTps','requestsRunning','requestsWaiting','slotsTotal',
       'totalOutputTokens','kvCacheUsage','ttftP95Seconds','e2eP95Seconds','itlP95Seconds',
-      'prefixCacheHitRate','mtpAcceptanceRate','preemptionsTotal','tokenCounters','weightsGb','kvCacheGb']) this[key] = null;
+      'prefixCacheHitRate','mtpAcceptanceRate','preemptionsTotal','tokenCounters','weightsGb','kvCacheGb',
+      'cachedPrefillTps','uncachedPrefillTps','ttftSeconds']) this[key] = null;
     this.contextLength = modelsContext;
     this.parallelism = null;
     this.slotsActive = 0;

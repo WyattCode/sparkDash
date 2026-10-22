@@ -9,3 +9,9 @@ test('native optional health failure does not retain old live rates or dereferen
  p._fetch=async url=>url.endsWith('/v1/models')?{ok:true,status:200,json:async()=>({data:[{id:'DeepSeek',owned_by:'tensorfold'}]})}:{ok:false,status:503};
  const s=await p._probeOpenAICompatible();assert.equal(s.available,true);for(const k of ['generationTps','prefillTps','totalOutputTokens','contextLength','slotsTotal'])assert.equal(s[k],null,k);
 });
+test('native live health clears latency and cached rate fields left by an earlier interface',async()=>{
+ const p=new LlmProbe({isLocal:true},8888);p.serverIsOpenAI=true;
+ p.cachedPrefillTps=90;p.uncachedPrefillTps=10;p.ttftSeconds=.2;
+ p._fetch=async url=>({ok:true,status:200,json:async()=>url.endsWith('/v1/models')?{data:[{id:'DeepSeek',owned_by:'tensorfold'}]}:{status:'ok',live:{connections:0,waiting:0}},text:async()=>''});
+ const s=await p._probeOpenAICompatible();for(const k of ['cachedPrefillTps','uncachedPrefillTps','ttftSeconds'])assert.equal(s[k],null,k);
+});

@@ -9,7 +9,7 @@
   "original_configured_lan": "192.168.10.124",
   "node_and_key_files_unchanged": true,
   "source_rebuild_matches_live": true,
-  "backend_tests": 498,
+  "backend_tests": 501,
   "frontend_tests": 315,
   "responsive_theme_view_checks": 36,
   "model_stream_protocol": {
@@ -19,5 +19,17 @@
   },
   "model_service_restarted": false,
   "github_pushed": false,
-  "verified_utc": "2026-10-22T17:16:50.973382+00:00"
+  "verified_utc": "2026-10-22T17:16:50.973382+00:00",
+  "second_audit": {
+    "fixes": [
+      "retry transient native-history writes",
+      "clear stale native latency and cached rates",
+      "refresh renamed node history labels"
+    ],
+    "backend_tests": 501,
+    "production_api_smoke": "passed",
+    "browser_analysis_diagnostics_showcase_roce": "passed",
+    "frontend_changed": false,
+    "github_pushed": false
+  }
 }
