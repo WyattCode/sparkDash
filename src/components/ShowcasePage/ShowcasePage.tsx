@@ -1,4 +1,6 @@
 import { displayName } from '../../displayName';
+import { WorkspaceNav } from '../WorkspaceNav';
+import { SettingsDialog } from '../SettingsDialog';
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ApiError,
@@ -20,7 +22,7 @@ import { isLlmMonitoringEnabled } from "../../api/sparkRole";
 import { BrandLink } from '../ui/BrandLink';
 import { TerminalCard } from "./TerminalCard";
 import { ThemeSwitch } from '../ThemeSwitch';
-import { GridIcon } from '../ui/icons';
+import { GearIcon } from '../ui/icons';
 import { checkShowcaseAvailability, useShowcaseAvailability } from '../../hooks/useShowcaseAvailability';
 import {
   PROMPT_TYPES,
@@ -175,6 +177,7 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
   const [thinking, setThinking] = useState(false);
   const [configOpen, setConfigOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(true);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [stopping, setStopping] = useState(false);
   const stoppingRef = useRef(false);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -738,11 +741,13 @@ export function ShowcasePage({ sparkId }: ShowcasePageProps) {
   const servicePorts = [...new Set([...llmPorts, port])];
 
   return (
-    <main className="showcase-workbench">
+    <main className="showcase-workbench product-shell">
       <header className="sw-topbar">
         <BrandLink />
-        <div className="sw-topbar__actions"><a href="/" className="sw-back icon-circle" title="概览" aria-label="概览"><GridIcon className="h-3.5 w-3.5" /></a><ThemeSwitch /></div>
+        <WorkspaceNav active="tests" beforeNavigate={()=>{if(sessionStatus==='running'){setRunError('测试正在运行，请先停止或等待结束后再切换工作区。');return false;}return true;}} />
+        <div className="sw-topbar__actions"><button className="icon-circle" title="设置" aria-label="设置" onClick={()=>setPreferencesOpen(true)}><GearIcon className="h-4 w-4"/></button><ThemeSwitch /></div>
       </header>
+      <SettingsDialog open={preferencesOpen} onClose={()=>setPreferencesOpen(false)} onSaved={next=>{document.documentElement.setAttribute('data-density',next.density);try{localStorage.setItem('sparkdash-density',next.density);}catch{}}}/>
       <div className="sw-shell">
         <section className="sw-heading" aria-labelledby="sw-title">
           <div><h1 id="sw-title">并发生成测试<span className="sw-heading-description"> - 对比生成表现</span></h1></div>

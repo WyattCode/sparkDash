@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { useSnapshot } from "./hooks/useSnapshot";
 import { useAppRoute, useRoute } from "./hooks/useRoute";
 import { fetchSparks, reorderSparks } from "./api/client";
-import { SparkTabs } from "./components/SparkTabs";
+import { NodeNavigation } from './components/NodeNavigation';
 import { AddSparkDialog } from "./components/AddSparkDialog";
 import { EditSparkDialog } from "./components/EditSparkDialog";
 import { SparkPage } from "./components/SparkPage/SparkPage";
@@ -13,7 +13,6 @@ import { ThemeSwitch } from "./components/ThemeSwitch";
 import { SettingsDialog } from "./components/SettingsDialog";
 import { GearIcon } from "./components/ui/icons";
 import { BrandLink } from './components/ui/BrandLink';
-import { ShowcaseShortcut } from './components/ShowcaseShortcut';
 import { ConnectionBanner } from "./components/ui/ConnectionBanner";
 import { ErrorBanner } from "./components/ui/ErrorBanner";
 import { OVERVIEW_ID } from "./constants";
@@ -22,6 +21,8 @@ import { isWorkerSpark } from "./api/sparkRole";
 import { useStartupPending } from "./hooks/useStartupPending";
 import { useDashboardSettings } from "./hooks/useDashboardSettings";
 import { useOverviewScrollbars } from './hooks/useOverviewScrollbars';
+import { useWorkspaceRoute, openWorkspace } from './hooks/useWorkspaceRoute';
+import { WorkspaceNav } from './components/WorkspaceNav';
 
 /** Keep hidden worker ids in their original slots when the visible tabs are reordered. */
 function mergeTabOrderKeepingHidden(
@@ -129,6 +130,7 @@ function placeholderSnapshot(
 }
 
 function DashboardApp() {
+  const workspace = useWorkspaceRoute();
   const {
     sparks,
     activeId,
@@ -280,7 +282,8 @@ function DashboardApp() {
 
   const handleReorder = useCallback(
     async (orderedIds: string[]) => {
-      const next = mergeTabOrderKeepingHidden(displaySparks, orderedIds, hiddenWorkerIds);
+      const fullOrder = orderedIds.length === displaySparks.length && new Set(orderedIds).size === displaySparks.length && orderedIds.every(id=>displaySparks.some(s=>s.id===id));
+      const next = fullOrder ? orderedIds : mergeTabOrderKeepingHidden(displaySparks, orderedIds, hiddenWorkerIds);
       setOrderOverride(next);
       try {
         await reorderSparks(next);
@@ -298,18 +301,11 @@ function DashboardApp() {
   if (startupPending) return <div className="app-frame startup-screen" role="status" aria-live="polite">正在加载监控…</div>;
 
   return (
-    <div className="app-frame min-h-screen text-text">
+    <div className={`app-frame product-shell min-h-screen text-text${isOverview ? ' cockpit-screen' : ''}`}>
       <div className="dashboard-shell">
         <header className="dashboard-topbar flex flex-wrap items-center gap-3">
           <BrandLink />
-          <SparkTabs
-            sparks={tabSparks}
-            activeId={displayActive?.id ?? activeId}
-            onSelect={navigate}
-            onAdd={() => setShowAdd(true)}
-            onEdit={(id) => setEditId(id)}
-            onReorder={handleReorder}
-          />
+          <WorkspaceNav active={isOverview ? workspace : 'nodes'} />
           <div className="dashboard-topbar-actions ml-auto flex items-center gap-2.5">
             <button
               type="button"
@@ -320,7 +316,6 @@ function DashboardApp() {
             >
               <GearIcon className="h-4 w-4" />
             </button>
-            <ShowcaseShortcut sparks={displaySparks} />
             <ThemeSwitch />
           </div>
         </header>
@@ -335,6 +330,9 @@ function DashboardApp() {
         <main className={telemetryStale || !connected ? "telemetry-stale" : undefined}>
           {isOverview ? (
             <OverviewPage
+              nodeControls={<NodeNavigation sparks={displaySparks} activeId={null} onSelect={id=>id?navigate(id):openWorkspace('nodes')} onAdd={()=>setShowAdd(true)} onEdit={setEditId} onReorder={handleReorder}/>}
+              workspace={workspace}
+              benchShareImage={settings?.benchShareImage ?? false}
               telemetryStale={telemetryStale || !connected}
               sparks={displaySparks}
               hideOffline={settings?.autoHideOffline ?? false}
@@ -347,6 +345,7 @@ function DashboardApp() {
             />
           ) : displayActive ? (
             <SparkPage
+              nodeControls={<NodeNavigation sparks={displaySparks} activeId={displayActive.id} onSelect={id=>id?navigate(id):openWorkspace('nodes')} onAdd={()=>setShowAdd(true)} onEdit={setEditId} onReorder={handleReorder}/>}
               spark={displayActive}
               temperatureUnit={settings?.temperatureUnit ?? "celsius"}
               benchShareImage={settings?.benchShareImage ?? false}
@@ -359,9 +358,7 @@ function DashboardApp() {
               </div>
               <h2 className="text-sm font-semibold text-text-strong">尚未添加设备</h2>
               <p className="mt-1 text-xs text-muted">
-                点击
-                <span className="rounded border border-border bg-surface-elevated px-1 py-0.5 text-text">+</span>
-                标签以添加 DGX Spark 设备。
+                在节点监控中点击“添加节点”，配置 DGX Spark 设备。
               </p>
             </div>
           )}

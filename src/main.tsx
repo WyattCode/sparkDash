@@ -7,6 +7,8 @@ import "./operations.css";
 import "./design-system.css";
 import "./responsive.css";
 import "./dgx.css";
+import "./cockpit.css";
+import "./product.css";
 import { installFlowMotion } from './flowMotion';
 
 const stopFlowMotion = installFlowMotion();

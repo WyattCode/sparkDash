@@ -2,8 +2,10 @@ import { displayName } from '../../displayName';
 import type { SparkSnapshot } from "../../api/types";
 import { resolveSparkRole } from "../../api/sparkRole";
 import { SparkActions } from "./SparkActions";
+import type { ReactNode } from 'react';
 
 interface SparkHeaderProps {
+  nodeControls?: ReactNode;
   spark: SparkSnapshot;
   onEdit?: () => void;
 }
@@ -20,7 +22,7 @@ function formatUptime(seconds: number): string {
   return `${days}d ${remainHours}h`;
 }
 
-export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
+export function SparkHeader({ spark, onEdit, nodeControls }: SparkHeaderProps) {
   const { hardware } = spark;
   const online = spark.online;
   const hermes = spark.hermes;
@@ -37,7 +39,7 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
         />
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
-            <h2 className="truncate text-base font-semibold text-text-strong">{displayName(spark.name)}</h2>
+            <h1 className="truncate text-base font-semibold text-text-strong">{displayName(spark.name)}</h1>
             {(() => {
               const role = resolveSparkRole(spark);
               const text =
@@ -118,6 +120,7 @@ export function SparkHeader({ spark, onEdit }: SparkHeaderProps) {
       </div>
 
       {/* Desktop action cluster (hidden on mobile; mobile renders its own row above Resources) */}
+      {nodeControls && <div className="node-header-controls">{nodeControls}</div>}
       <SparkActions
         spark={spark}
         onEdit={onEdit}

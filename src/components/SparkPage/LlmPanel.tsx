@@ -70,7 +70,7 @@ function readStoredRemote(): { host: string; port: string; tls: boolean } {
 
 /** Decode / prefill / Showcase launchers — shown even when the live probe is empty
  *  (remote loopback-bound servers can still be benched via SSH tunnel). */
-function LlmLaunchers({
+export function LlmLaunchers({
   sparkId,
   llmPort,
   modelId,
@@ -264,7 +264,7 @@ function LlmLaunchers({
         }}
         className={`${LAUNCHER_BTN} w-full`}
       >
-        演示
+        并发生成测试
       </button>
     </div>
   );
@@ -712,7 +712,7 @@ export function LlmPanel({
           <div className="flex items-center justify-between">
             <span className="text-xs text-muted">生成 tok/s</span>
             <div className="flex items-center gap-2">
-              <Sparkline data={genHistory} color="var(--color-data)" height={24} />
+              <Sparkline label="输出吞吐" unit="tok/s" data={genHistory} source={{sparkId,metric:`llm:${llmPort}.tps`}} color="var(--color-data)" height={24} />
               <div className="text-right">
                 <div className="font-tabular text-sm font-semibold text-text-strong">
                   {generationTps.toFixed(1)}
@@ -731,7 +731,7 @@ export function LlmPanel({
           >
             <span className="text-xs text-muted" title={llm?.backend==='tensorfold'?'原生输入 Token 在请求结束后更新，非实时 GPU 预填充速度':undefined}>{llm?.backend==='tensorfold'?'完成输入 tok/s':'预填充 tok/s'}</span>
             <div className="flex items-center gap-2">
-              <Sparkline data={prefillHistory} color="var(--color-text)" height={24} />
+              <Sparkline label="输入吞吐" unit="tok/s" data={prefillHistory} source={{sparkId,metric:`llm:${llmPort}.prefill`}} color="var(--color-text)" height={24} />
               <div className="text-right">
                 <div className="font-tabular text-sm font-semibold text-text">
                   {prefillTps.toFixed(1)}
@@ -752,7 +752,7 @@ export function LlmPanel({
               >
                 <span className="text-xs text-muted">缓存预填充 tok/s</span>
                 <div className="flex items-center gap-2">
-                  <Sparkline data={cachedPrefillHistory} color="var(--color-muted)" height={24} />
+                  <Sparkline label="缓存输入吞吐" unit="tok/s" data={cachedPrefillHistory} source={{sparkId,metric:`llm:${llmPort}.prefillCached`}} color="var(--color-muted)" height={24} />
                   <div className="text-right">
                     <div className="font-tabular text-sm font-semibold text-muted">
                       {cachedPrefillTps.toFixed(1)}
@@ -771,7 +771,7 @@ export function LlmPanel({
               >
                 <span className="text-xs text-muted">未缓存预填充 tok/s</span>
                 <div className="flex items-center gap-2">
-                  <Sparkline data={uncachedPrefillHistory} color="var(--color-text)" height={24} />
+                  <Sparkline label="非缓存输入吞吐" unit="tok/s" data={uncachedPrefillHistory} source={{sparkId,metric:`llm:${llmPort}.prefillUncached`}} color="var(--color-text)" height={24} />
                   <div className="text-right">
                     <div className="font-tabular text-sm font-semibold text-text">
                       {uncachedPrefillTps.toFixed(1)}

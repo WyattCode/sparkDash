@@ -34,12 +34,10 @@ it('keeps the page title and icon navigation without a duplicate topbar caption'
   expect(c.textContent).not.toContain('模型工具 / 并发生成测试');
   expect(c.querySelector('.sw-topbar__section')).toBeNull();
   expect(c.querySelector('h1')?.textContent).toBe('并发生成测试 - 对比生成表现');
-  const back=c.querySelector<HTMLAnchorElement>('.sw-back');
+  const back=c.querySelector<HTMLAnchorElement>('.workspace-nav a[href="/"]');
   expect(back?.getAttribute('href')).toBe('/');
-  expect(back?.getAttribute('aria-label')).toBe('概览');
-  expect(back?.getAttribute('title')).toBe('概览');
-  expect(back?.textContent).toBe('');
-  expect(back?.querySelector('svg')).not.toBeNull();
+  expect(back?.textContent).toContain('概览');
+  expect(c.querySelector('.sw-back')).toBeNull();
 });
 it('TensorFold keeps model identity and request choices without the removed capacity note',async()=>{
   vi.mocked(api.fetchSparkMetrics).mockResolvedValue({metrics:{llm:[{backend:'tensorfold',available:true,modelId:'GLM-5.3-Flash-EXL3',slotsTotal:8}]}} as never);

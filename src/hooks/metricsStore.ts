@@ -43,6 +43,42 @@ const listeners = new Set<() => void>();
 
 const EMPTY: readonly number[] = Object.freeze([] as number[]);
 
+// Persist only bounded numeric telemetry, never snapshots, credentials or prompts.
+const CACHE_KEY = 'sparkdash-metric-history-v1';
+const CACHE_WINDOW = 120_000;
+let lastSaved = 0;
+export function persistMetricHistory(): void {
+  try {
+    const cutoff = Date.now() - CACHE_WINDOW;
+    const series = [...historySamples].map(([key, samples]) => [key, samples.filter(s => s.at >= cutoff).slice(-240)] as const).filter(([, samples]) => samples.length).slice(-256);
+    localStorage.setItem(CACHE_KEY, JSON.stringify({series, identities:[...llmIdentities].slice(-64)}));
+    lastSaved = Date.now();
+  } catch { /* Storage denial/quota must not interrupt live monitoring. */ }
+}
+export function restoreMetricHistory(): void {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    if (!raw || raw.length > 4_000_000) return;
+    const saved = JSON.parse(raw), now = Date.now();
+    if (!Array.isArray(saved.series) || !Array.isArray(saved.identities)) return;
+    for (const entry of saved.identities.slice(0,64)) {
+      if (Array.isArray(entry) && entry.length===2 && entry.every(v=>typeof v==='string' && v.length<1024)) llmIdentities.set(entry[0],entry[1]);
+    }
+    for (const entry of saved.series.slice(0,256)) {
+      if (!Array.isArray(entry) || typeof entry[0]!=='string' || entry[0].length>256 || !Array.isArray(entry[1])) continue;
+      for (const s of entry[1].slice(-240)) {
+        if (s && Number.isFinite(s.at) && s.at>=now-CACHE_WINDOW && s.at<=now && Number.isFinite(s.value) && s.value>=0) pushHistory(entry[0],s.value,s.at);
+      }
+    }
+    notify();
+  } catch { /* Corrupt/disabled browser storage is optional. */ }
+}
+restoreMetricHistory();
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide',persistMetricHistory);
+  document.addEventListener('visibilitychange',()=>{if(document.hidden)persistMetricHistory();});
+}
+
 /**
  * Mean of a metric series over samples where the reading is > 0, or null when
  * there are no busy samples. Skipping zeros keeps idle/off phases from dragging
@@ -80,17 +116,17 @@ function setHistoryTail(key: string, full: number[]) {
   historyTails.set(key, full.length <= SPARKLINE_TAIL ? full : full.slice(-SPARKLINE_TAIL));
 }
 
-function pushHistory(key: string, value: number, at: number) {
+function pushHistory(key: string, value: number, at: number, capacity = HISTORY_MAX) {
   let ring = history.get(key);
   if (!ring) {
-    ring = new TimedRingBuffer(HISTORY_MAX);
+    ring = new TimedRingBuffer(capacity);
     history.set(key, ring);
   }
   const last = ring.last();
   if (last && at < last.at) return;
   if (last && at === last.at) ring.replaceLast({ at, value });
   else ring.push({ at, value });
-  ring.pruneBefore(at - HISTORY_HOURS * 3_600_000);
+  ring.pruneBefore(at - (capacity === HISTORY_MAX ? HISTORY_HOURS * 3_600_000 : 60_000));
   const samples = ring.toArray();
   historySamples.set(key, samples);
   historyValues.set(key, samples.map((sample) => sample.value));
@@ -126,6 +162,11 @@ export function ingestSnapshots(sparks: SparkSnapshot[], at = Date.now()): boole
     if (m.gpu) {
       pushHistory(`${s.id}:gpu.usage`, m.gpu.usage, at);
       pushHistory(`${s.id}:gpu.temp`, m.gpu.temperature, at);
+      const watts = m.gpu.power?.draw;
+      if (typeof watts === 'number' && Number.isFinite(watts) && watts >= 0) {
+        // Small browser-only trace, bounded to 60 points / one minute.
+        pushHistory(`${s.id}:gpu.power`, watts, at, 60);
+      }
     }
     if (m.cpu) {
       pushHistory(`${s.id}:cpu.usage`, m.cpu.usage, at);
@@ -185,10 +226,17 @@ export function ingestSnapshots(sparks: SparkSnapshot[], at = Date.now()): boole
       removeHistoryForSpark(id);
     }
   }
+  // Restored browser series have no snapshot in sparkMap yet. Remove cached
+  // entries absent from the first authoritative registry frame as well.
+  const prefixes=[...alive].map(id=>`${id}:`);
+  for(const store of [history,historySamples,historyValues,historyTails,llmIdentities]){
+    for(const key of store.keys())if(!prefixes.some(prefix=>key.startsWith(prefix)))store.delete(key);
+  }
 
   // Always notify: sparkMap refs refresh every frame (online flips included),
   // even when no history sample was appended.
   notify();
+  if (Date.now()-lastSaved>=5000) persistMetricHistory();
   return true;
 }
 

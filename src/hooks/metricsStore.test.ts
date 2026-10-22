@@ -8,6 +8,15 @@ import { makeSpark } from "../testing/fixtures";
 
 describe("metricsStore timestamp contract", () => {
   beforeEach(_resetStore);
+  it('bounds real browser-only power history and never fills missing readings with zero',()=>{
+    const s=makeSpark();
+    for(let i=1;i<=100;i++) {s.metrics.gpu!.power.draw=i;ingestSnapshots([s],i*1000);}
+    const samples=getMetricHistorySamples(s.id,'gpu.power');
+    expect(samples).toHaveLength(60);expect(samples[0].value).toBe(41);
+    s.metrics.gpu!.power.draw=NaN;ingestSnapshots([s],101000);
+    expect(getMetricHistorySamples(s.id,'gpu.power')).toHaveLength(60);
+    expect(getMetricHistorySamples(s.id,'gpu.power').at(-1)?.value).toBe(100);
+  });
   it('separates model/backend history and does not append unavailable LLM zeros',()=>{
     const spark=makeSpark();spark.llmPorts=[8888];
     Object.assign(spark.metrics.llm[0],{backend:'sglang',modelId:'old',available:true,generationTps:100});

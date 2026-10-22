@@ -191,13 +191,13 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
             <div className="settings-switch-list">
               <SettingsSwitch title="自动隐藏离线节点" detail="仅影响概览中的节点显示，不会移除节点配置。"
                 checked={settings.autoHideOffline} onChange={() => update({ autoHideOffline: !settings.autoHideOffline })} />
-              <SettingsSwitch title="隐藏工作节点" detail="在概览和标签栏中隐藏；直接链接、批量电源和 Hermes 操作仍包含这些节点。"
+              <SettingsSwitch title="隐藏工作节点" detail="仅在概览隐藏；节点监控、直接链接、批量电源和 Hermes 操作仍包含这些节点。"
                 checked={Boolean(settings.hideWorkers)} onChange={() => update({ hideWorkers: !settings.hideWorkers })} />
-              <SettingsSwitch title="显示搜索和状态筛选" detail="同时显示节点搜索框与全部、在线、离线、异常筛选。"
+              <SettingsSwitch title="显示搜索和状态筛选" detail="在概览显示搜索与状态筛选；节点监控始终提供筛选。"
                 checked={Boolean(settings.showOverviewSearch)} onChange={() => update({ showOverviewSearch: !settings.showOverviewSearch })} />
-              <SettingsSwitch title="显示集群能耗" detail="显示基于集群功耗的滚动估算卡片，并非电表计量。"
+              <SettingsSwitch title="概览显示能耗入口" detail="在概览增加能耗快捷入口；估算详情统一在运行分析查看，并非电表计量。"
                 checked={Boolean(settings.showFleetEnergy)} onChange={() => update({ showFleetEnergy: !settings.showFleetEnergy })} />
-              <SettingsSwitch title="显示集群当前异常" detail="显示离线、GPU 降频、磁盘、模型和 Tailnet 异常。"
+              <SettingsSwitch title="显示集群正常摘要" detail="无异常时也显示状态摘要；已发现的异常始终在概览显示。"
                 checked={Boolean(settings.showFleetExceptions)} onChange={() => update({ showFleetExceptions: !settings.showFleetExceptions })} />
             </div>
             <h3 className="settings-section-title">界面显示</h3>

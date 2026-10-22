@@ -69,7 +69,7 @@ export function RamPanel({ ram, cpu, sparkId, temperatureUnit, className }: RamP
             <div className="flex items-center justify-between text-sm">
               <span className="text-muted">使用率</span>
               <div className="flex items-center gap-3">
-                <Sparkline data={history} color="var(--color-accent)" width={180} />
+                <Sparkline label="内存占用" unit="%" data={history} source={{sparkId,metric:"ram.percentage"}} color="var(--color-accent)" width={180} />
                 <span className="font-tabular text-sm font-semibold text-text">{percentage}%</span>
               </div>
             </div>
@@ -86,7 +86,7 @@ export function RamPanel({ ram, cpu, sparkId, temperatureUnit, className }: RamP
           <span className="text-muted">CPU</span>
           <div className="flex items-center gap-3">
             <span style={{ color: tempColor }}>
-              <Sparkline data={tempHistory} color={tempColor} width={180} />
+              <Sparkline label="CPU 温度" unit="°C" data={tempHistory} source={{sparkId,metric:"cpu.temp"}} color={tempColor} width={180} />
             </span>
             <span className="font-tabular text-sm font-semibold text-text">{tempLabel}</span>
           </div>

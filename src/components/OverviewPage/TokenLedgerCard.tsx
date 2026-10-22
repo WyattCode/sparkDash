@@ -9,11 +9,11 @@ export interface TokenTotals {
 }
 const number=(value:number|null)=>value==null?'—':value.toLocaleString('zh-CN');
 
-export function TokenLedgerCard() {
+export function TokenLedgerCard({defaultOpen = false}: {defaultOpen?: boolean} = {}) {
   const [range,setRange]=useState('today');
   const [data,setData]=useState<TokenTotals|null>(null);
   const [error,setError]=useState<string|null>(null);
-  const [open,setOpen]=useState(false);
+  const [open,setOpen]=useState(defaultOpen);
   useEffect(()=>{
     if(!open)return;
     let cancelled=false,timer:ReturnType<typeof setTimeout>|undefined;
@@ -27,7 +27,7 @@ export function TokenLedgerCard() {
     void load();
     return()=>{cancelled=true;controller.abort();if(timer)clearTimeout(timer);};
   },[range,open]);
-  return <details className="panel p-4" onToggle={e=>setOpen(e.currentTarget.open)}>
+  return <details className="panel p-4" open={open} onToggle={e=>setOpen(e.currentTarget.open)}>
     <summary className="cursor-pointer text-sm font-semibold text-text-strong">模型 Token 台账</summary>
     {open && <div className="mt-3 space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-3">

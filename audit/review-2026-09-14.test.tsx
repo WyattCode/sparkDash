@@ -50,7 +50,8 @@ it('service details start collapsed and review retains explicit consent and rate
   await flush();
   const details=container.querySelector('.ops-service-details') as HTMLDetailsElement;
   expect(details.open).toBe(false);
-  expect(container.querySelectorAll('.ops-service summary')).toHaveLength(1);
+  expect(container.querySelectorAll('.ops-service summary')).toHaveLength(2);
+  expect((container.querySelector('.service-acceptance') as HTMLDetailsElement).open).toBe(false);
   expect(details.querySelector('summary')?.textContent).toBe('验收与请求详情');
   expect(details.textContent).toContain('每 5 分钟最多一次');
   expect(container.querySelector('[role=alert]')?.closest('details')).toBeNull();

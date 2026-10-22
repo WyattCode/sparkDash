@@ -77,6 +77,7 @@ export class LlmProbe {
     this.modelId = null;
     this.modelPath = null;
     this.contextLength = null;
+    this.parallelism = null;
     this.gpuMemoryUtilization = null;
     this.slotsActive = 0;
     this.slotsTotal = 0;
@@ -262,6 +263,7 @@ export class LlmProbe {
   }
 
   _resetDetection() {
+    this.parallelism = null;
     this.tokenCounters = null;
     this.kvCacheGb = null;
     this.weightsGb = null;
@@ -1034,6 +1036,12 @@ let modelsOk = false;
    * @param {number} dtSec
    */
   _applySglangServerInfo(sgData, dtSec) {
+    // Display-only facts from the existing server-info read; never infer TP
+    // from node count and never modify engine configuration.
+    const args = sgData?.server_args ?? sgData;
+    const size = value => Number.isSafeInteger(value) && value > 0 ? value : null;
+    const tensor = size(args?.tp_size), expert = size(args?.ep_size);
+    this.parallelism = tensor != null || expert != null ? {tensor, expert} : null;
     const states = Array.isArray(sgData?.internal_states) ? sgData.internal_states : [];
     const mem = states.find(s => s?.memory_usage)?.memory_usage;
     this.weightsGb = LlmProbe._positiveNumber(mem?.weight);
@@ -1816,6 +1824,7 @@ let modelsOk = false;
       modelId: this.modelId || null,
       modelPath: this.modelPath || null,
       contextLength: this.contextLength,
+      parallelism: metricsLive ? this.parallelism : null,
       gpuMemoryUtilization: this.gpuMemoryUtilization,
       slotsActive: this.slotsActive,
       slotsTotal: this.slotsTotal,
@@ -1849,6 +1858,7 @@ let modelsOk = false;
       modelId: null,
       modelPath: null,
       contextLength: null,
+      parallelism: null,
       gpuMemoryUtilization: null,
       slotsActive: 0,
       slotsTotal: 0,

@@ -284,6 +284,8 @@ export interface UnifiedMemoryMetrics {
 export interface LlmMetrics {
   available: boolean;
   backend: "vllm" | "llama.cpp" | "sglang" | "ds4" | "exl3" | "q27" | "tensorfold" | null;
+  /** Read-only actual engine parallelism; never inferred from device count. */
+  parallelism?: {tensor: number | null; expert: number | null} | null;
   modelId: string | null;
   modelPath: string | null;
   contextLength: number | null;

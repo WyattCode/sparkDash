@@ -6,6 +6,7 @@ import {fetchOperations,fetchVerification} from '../../api/client';
 vi.mock('../../api/client',()=>({fetchOperations:vi.fn(),fetchVerification:vi.fn(),fetchOperationsHistory:vi.fn(),testSpark:vi.fn(),runVerification:vi.fn(),fetchFleetEnergy:vi.fn()}));
 it('distinguishes current integer request counts from estimated window counts',async()=>{
   const spark=makeSpark();const now=Date.now();
+  spark.metrics.llm[0].requestsRunning=1;spark.metrics.llm[0].requestsWaiting=0;
   const labels={node:spark.name,instance:'localhost:8888',model_name:'fixture-model'};
   const metric=(value:number,extra={})=>({series:[{labels:{...labels,...extra},points:[[now,value] as [number,number]]}],error:null});
   vi.mocked(fetchVerification).mockResolvedValue({supported:false,checkedAt:now});

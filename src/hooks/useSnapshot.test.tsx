@@ -94,9 +94,9 @@ describe("useSnapshot connection lifecycle", () => {
     sessionStorage.clear();
     const send=vi.fn().mockResolvedValue({ok:true,status:202});vi.stubGlobal('fetch',send);
     render(<Probe/>);const socket=MockSocket.instances[0];
-    act(()=>{socket.open();socket.emit({type:'snapshot',bootId:'boot-one',generatedAt:50000,sparks:[makeSpark('worker-fixture',false)]});});
+    act(()=>{socket.open();socket.emit({type:'snapshot',bootId:'boot-one',generatedAt:50000,sparks:[makeSpark('ffda',false)]});});
     await flush();
-    act(()=>socket.emit({type:'snapshot',bootId:'boot-two',generatedAt:50001,sparks:[makeSpark('worker-fixture',true)]}));
+    act(()=>socket.emit({type:'snapshot',bootId:'boot-two',generatedAt:50001,sparks:[makeSpark('ffda',true)]}));
     await flush();await flush();
     const events=send.mock.calls.map(c=>JSON.parse(c[1].body));
     for(const kind of ['snapshot_received','snapshot_applied']){
@@ -109,7 +109,7 @@ describe("useSnapshot connection lifecycle", () => {
     sessionStorage.clear();
     const send=vi.fn().mockResolvedValue({ok:true,status:202});vi.stubGlobal('fetch',send);
     render(<Probe/>);
-    const frame={type:'snapshot',bootId:'same-server',generatedAt:50000,sparks:[makeSpark('worker-fixture',true)]};
+    const frame={type:'snapshot',bootId:'same-server',generatedAt:50000,sparks:[makeSpark('ffda',true)]};
     act(()=>{MockSocket.instances[0].open();MockSocket.instances[0].emit(frame);});
     await flush();await flush();
     act(()=>{MockSocket.instances[0].close();vi.advanceTimersByTime(2100);});

@@ -40,5 +40,7 @@ config/connectivity-events.jsonl.*
 config/llm-token-totals.json
 config/llm-token-totals.json.*.tmp
 config/fleet-energy.scope-*.json
+config/connectivity-events.jsonl*
+config/sparks.json.*
 config/sparks.json.new
 deploy/OPERATIONS-HANDOFF-*.md
