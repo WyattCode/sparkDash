@@ -72,6 +72,7 @@ export function useRoute(
       const url = id && id !== OVERVIEW_ID ? `/spark/${encodeURIComponent(id)}` : "/";
       if (window.location.pathname !== url || window.location.search || window.location.hash) window.history.pushState(null, "", url);
       setActiveId(id ?? OVERVIEW_ID);
+      window.dispatchEvent(new PopStateEvent('popstate'));
       window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     },
     [setActiveId]

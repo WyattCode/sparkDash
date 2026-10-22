@@ -34,12 +34,20 @@ it('keeps the page title and icon navigation without a duplicate topbar caption'
   expect(c.textContent).not.toContain('模型工具 / 并发生成测试');
   expect(c.querySelector('.sw-topbar__section')).toBeNull();
   expect(c.querySelector('h1')?.textContent).toBe('并发生成测试 - 对比生成表现');
-  const back=c.querySelector<HTMLAnchorElement>('.sw-back');
+  const back=c.querySelector<HTMLAnchorElement>('.workspace-nav a[href="/"]');
   expect(back?.getAttribute('href')).toBe('/');
-  expect(back?.getAttribute('aria-label')).toBe('概览');
-  expect(back?.getAttribute('title')).toBe('概览');
-  expect(back?.textContent).toBe('');
-  expect(back?.querySelector('svg')).not.toBeNull();
+  expect(back?.textContent).toContain('概览');
+  expect(c.querySelector('.sw-back')).toBeNull();
+});
+it('TensorFold keeps model identity and request choices without the removed capacity note',async()=>{
+  vi.mocked(api.fetchSparkMetrics).mockResolvedValue({metrics:{llm:[{backend:'tensorfold',available:true,modelId:'GLM-5.3-Flash-EXL3',slotsTotal:8}]}} as never);
+  const c=await setup();
+  expect(c.querySelector('.sw-model strong')?.textContent).toBe('GLM-5.3-Flash-EXL3');
+  expect(c.textContent).not.toContain('TensorFold 四机协同');
+  expect(c.textContent).not.toContain('测试路数是客户端请求数');
+  expect(c.querySelector('#sw-settings > p')).toBeNull();
+  const field=[...c.querySelectorAll('label')].find(e=>e.textContent?.includes('并发请求数'));
+  expect(field?.querySelector('option[value="32"]')).not.toBeNull();
 });
 it('first result failure retains the session and retries reads, never repeats start',async()=>{
   vi.mocked(api.getShowcase).mockRejectedValueOnce(Error('短暂断线'));

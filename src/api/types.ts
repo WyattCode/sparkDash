@@ -283,7 +283,9 @@ export interface UnifiedMemoryMetrics {
 // ─── LLM metrics ─────────────────────────────────────────
 export interface LlmMetrics {
   available: boolean;
-  backend: "vllm" | "llama.cpp" | "sglang" | "ds4" | "exl3" | "tensorfold" | "q27" | null;
+  backend: "vllm" | "llama.cpp" | "sglang" | "ds4" | "exl3" | "q27" | "tensorfold" | null;
+  /** Read-only actual engine parallelism; never inferred from device count. */
+  parallelism?: {tensor: number | null; expert: number | null} | null;
   modelId: string | null;
   modelPath: string | null;
   contextLength: number | null;
@@ -299,7 +301,12 @@ export interface LlmMetrics {
   uncachedPrefillTps?: number | null;
   /** Cumulative total output (generation) tokens as reported by the LLM server */
   totalOutputTokens: number;
-  /** vLLM KV cache usage fraction (0–1). null when backend !== vllm or unreachable. */
+  /** Fresh cumulative counters for durable accounting; unsupported/missing = null. */
+  tokenCounters?: {output: number; prompt: number | null; cached: number | null; source: string} | null;
+  /** SGLang single scheduler memory report, engine GB units, not fleet totals. */
+  kvCacheGb?: number | null;
+  weightsGb?: number | null;
+  /** Engine KV pool usage fraction (0–1); null when not reported. */
   kvCacheUsage?: number | null;
   /** vLLM running request count. null when unavailable. */
   requestsRunning?: number | null;
@@ -541,7 +548,10 @@ export interface FleetEnergy {
   whPerOutputToken24h: number | null;
   outputTokens24h: number;
   coverage24hMs: number;
+  /** Window coverage24hMs is measured over (server-owned; fleet-size independent). */
+  coverage24hWindowMs?: number;
   coverage31dMs: number;
+  coverage31dWindowMs?: number;
   nodeCoverage24hMs: Record<string, number>;
   nodeCoverage31dMs: Record<string, number>;
   hourlyWatts24h: Array<number | null>;

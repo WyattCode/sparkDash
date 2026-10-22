@@ -6,10 +6,10 @@ const exec = promisify(execFile);
 const MODEL = 'deepseek-v4.1-flash';
 const BASE = 'http://127.0.0.1:8888';
 
-export async function productionBoot() {
-  const container = process.env.SPARKDASH_VERIFICATION_CONTAINER;
-  if (!container || !/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(container)) return null;
-  const args = ['docker', 'inspect', '--format', '{{.State.Running}} {{.State.StartedAt}}', container];
+export async function productionBoot(backend) {
+  // Native model API does not report a verifiable engine boot id.
+  if(backend==='tensorfold')return null;
+  const args = ['docker', 'inspect', '--format', '{{.State.Running}} {{.State.StartedAt}}', backend === 'tensorfold' ? 'glm53-flash-tf' : 'dsv41-head'];
   const {stdout} = await exec('nsenter', ['-t','1','-m','--',...args], {timeout:5000,maxBuffer:4096});
   const [running, at] = stdout.trim().split(/\s+/);
   return running === 'true' && Number.isFinite(Date.parse(at)) ? new Date(at).toISOString() : null;
@@ -19,19 +19,23 @@ export function recordCurrent(record, boot, model) {
   return !!record && !!boot && record.boot === boot && record.model === model;
 }
 
-export function createServiceVerification({file, getSpark, snapshots, fetchImpl = fetch, getBoot = productionBoot, imageFile = process.env.SPARKDASH_VERIFICATION_IMAGE || '', nodeName = process.env.SPARKDASH_VERIFICATION_NODE || ''}) {
+export function createServiceVerification({file, getSpark, snapshots, fetchImpl = fetch, getBoot = productionBoot, imageFile = '/host/root/home/wyatt/deepseek-v4-flash-dspark/results/smoke-solid-red.jpg'}) {
   let cache = null, pending = null, running = false, lastRun = 0;
+  // Accept the served model name or a model path whose basename matches it, so
+  // the adapter still targets production when the probe reports the on-disk
+  // path (e.g. /models/DeepSeek-V4.1-Flash) instead of the served id.
   function matchesModel(modelId) {
     if (typeof modelId !== 'string' || !modelId.trim()) return false;
     const id = modelId.trim().toLowerCase();
-    return id === MODEL || (id.split('/').filter(Boolean).pop() || '') === MODEL;
+    if (id === MODEL) return true;
+    const base = id.split('/').filter(Boolean).pop() || '';
+    return base === MODEL;
   }
   function target() {
-    const candidates = snapshots().filter(s=>s.isLocal&&s.role==='head'&&(nodeName?s.name===nodeName:s.metrics.llm.some(l=>l.backend==='tensorfold')));
-    const s = candidates.length === 1 ? candidates[0] : null;
-    const index = s?.metrics.llm.findIndex((l,i)=>(matchesModel(l.modelId)||l.backend==='tensorfold')&&(s.llmPorts?.[i]??s.llmPort)===8888) ?? -1;
-    if (!s || index < 0) return null;
-    return {node:s.name, model:s.metrics.llm[index].modelId, port:8888, backend:s.metrics.llm[index].backend, key:getSpark(s.id)?.llmApiKeys?.['8888'] || ''};
+    const candidates = snapshots().filter(s=>s.isLocal&&s.role==='head').flatMap(s=>s.metrics.llm.map((l,i)=>({s,l,port:s.llmPorts?.[i]??s.llmPort}))).filter(t=>t.port===8888&&t.l.modelId);
+    if(candidates.length!==1)return null;
+    const {s,l,port}=candidates[0];
+    return {node:s.name,model:l.modelId,backend:l.backend,port,key:getSpark(s.id)?.llmApiKeys?.[String(port)]||''};
   }
   function readRecords() {
     try {
@@ -53,17 +57,17 @@ export function createServiceVerification({file, getSpark, snapshots, fetchImpl 
   }
   async function load() {
     const t = target();
-    if (!t) return {checkedAt:Date.now(),supported:false,reason:'当前服务未匹配双机生产验收适配器'};
-    const boot = await getBoot().catch(()=>null);
+    if (!t) return {checkedAt:Date.now(),supported:false,reason:'当前服务未匹配生产验收适配器'};
+    const boot = await getBoot(t.backend).catch(()=>null);
     const auth = {status:'unavailable',anonymous:null,invalid:null,keyed:null};
     try {
       const [anon,invalid,keyed] = await Promise.all([probe('/v1/models',''),probe('/v1/models','sparkdash-intentionally-invalid-key'),t.key?probe('/v1/models',t.key):Promise.resolve(null)]);
       auth.anonymous=anon.status;auth.invalid=invalid.status;auth.keyed=keyed?.status??null;
-      const listed = keyed?.data?.data?.some(m=>m.id===t.model||(t.backend!=='tensorfold'&&matchesModel(m.id)));
+      const listed = keyed?.data?.data?.some(m=>m.id===t.model||matchesModel(m.id)&&matchesModel(t.model));
       auth.status = anon.status===200 ? 'open' : [401,403].includes(anon.status)&&[401,403].includes(invalid.status)&&keyed?.status===200&&listed ? 'verified' : !t.key ? 'missing_key' : [401,403].includes(keyed?.status) ? 'rejected' : 'unavailable';
     } catch { /* explicit unavailable, never reuse an old success */ }
     const {records,storageError}=readRecords();
-    return {checkedAt:Date.now(),supported:true,node:t.node,port:t.port,model:t.model,boot,auth,storageError,running,canVerify:!!boot&&auth.status==='verified',reason:!boot?'服务未提供可核验的启动标识，暂无实测验收记录':null,
+    return {checkedAt:Date.now(),supported:true,canVerify:t.backend!=='tensorfold'&&!!boot&&auth.status==='verified'&&!running,manualSupported:t.backend!=='tensorfold',node:t.node,port:t.port,model:t.model,boot,auth,storageError,running,
       inference:records.inference||null,warmup:records.warmup||null,vision:records.vision||null,
       current:{inference:recordCurrent(records.inference,boot,t.model),warmup:recordCurrent(records.warmup,boot,t.model),vision:recordCurrent(records.vision,boot,t.model)}};
   }
@@ -79,6 +83,7 @@ export function createServiceVerification({file, getSpark, snapshots, fetchImpl 
     try {
       const t=target();
       if (!t) throw Object.assign(new Error('当前模型未匹配生产适配器'),{status:409});
+      if (t.backend==='tensorfold') throw Object.assign(new Error('TensorFold 推理验收和预热请使用控制中心；旧引擎复验不适用'),{status:409});
       const state=await status(true);
       if (!state.boot||state.auth?.status!=='verified') throw Object.assign(new Error('先确认模型启动标识及鉴权通过'),{status:409});
       const saved=readRecords();
@@ -97,7 +102,7 @@ export function createServiceVerification({file, getSpark, snapshots, fetchImpl 
           return {instance:row.metric.instance, value:Number(row.value[1])};
         }
         const checks = await Promise.all(['sglang:num_running_reqs','sglang:num_queue_reqs','up'].map(async name => {
-          const selector = `${name}{node=${JSON.stringify(t.node)},job="vllm"${name==='up'?'':`,model_name=${JSON.stringify(t.model)}`}}`;
+          const selector = `${name}{node=${JSON.stringify(t.node)},job="vllm"${name==='up'?'':',model_name='+JSON.stringify(t.model)}}`;
           // timestamp() exposes the raw sample time; value[0] is query time.
           const [sample, stamp] = await Promise.all([query(selector),query(`timestamp(${selector})`)]);
           const age = Date.now()/1000-stamp.value;

@@ -1,5 +1,7 @@
+import { displayName } from '../../displayName';
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { SparkSnapshot } from "../../api/types";
+import { gpuReady } from './operationsModel';
 
 type Alert = { key: string; spark: SparkSnapshot; label: string; severity: "critical" | "warning" };
 
@@ -7,9 +9,10 @@ function derive(sparks: SparkSnapshot[]): Alert[] {
   const alerts: Alert[] = [];
   for (const spark of sparks) {
     if (!spark.online) alerts.push({ key: `${spark.id}:offline`, spark, label: "主机无法访问", severity: "critical" });
+    if (spark.online && !gpuReady(spark)) alerts.push({key:`${spark.id}:gpu-metrics`,spark,label:'GPU 指标缺失或已过期',severity:'warning'});
     if (spark.metrics.gpu?.throttle?.active) alerts.push({ key: `${spark.id}:throttle`, spark, label: `GPU 降频：${spark.metrics.gpu.throttle.detail}`, severity: "critical" });
     if (spark.metrics.storage.some((disk) => disk.percentage >= 90)) alerts.push({ key: `${spark.id}:disk`, spark, label: "存储使用率达到或超过 90%", severity: "warning" });
-    if (spark.llmMonitoring !== false && spark.metrics.llm.length > 0 && spark.metrics.llm.every((llm) => !llm.available)) alerts.push({ key: `${spark.id}:llm`, spark, label: "LLM 不可用", severity: "warning" });
+    if (spark.role !== 'worker' && !spark.workerNode && spark.llmMonitoring !== false && spark.metrics.llm.every((llm) => !llm.available)) alerts.push({ key: `${spark.id}:llm`, spark, label: spark.metrics.llm.length ? '模型 API 探测不可用' : '模型 API 等待采样', severity: "warning" });
     if (spark.tailscaleMonitoring && spark.metrics.tailscale && (!spark.metrics.tailscale.available || spark.metrics.tailscale.online === false)) alerts.push({ key: `${spark.id}:tailnet`, spark, label: "Tailnet 不可用", severity: "warning" });
   }
   return alerts;
@@ -33,7 +36,7 @@ export function FleetAlertStrip({ sparks, onSelect }: { sparks: SparkSnapshot[];
       <ul className="mt-2 flex flex-wrap gap-2">
         {alerts.map((alert) => <li key={alert.key}>
           <button type="button" onClick={() => onSelect?.(alert.spark.id)} className={`min-h-11 rounded border px-3 py-2 text-left text-xs ${alert.severity === "critical" ? "border-danger/50 text-danger" : "border-warning/50 text-warning"}`}>
-            <strong>{alert.spark.name}</strong> · {alert.label} · {Math.max(0, Math.floor((now - (firstSeen.current.get(alert.key) ?? now)) / 60_000))}m
+            <strong>{displayName(alert.spark.name)}</strong> · {alert.label} · {Math.max(0, Math.floor((now - (firstSeen.current.get(alert.key) ?? now)) / 60_000))}m
           </button>
         </li>)}
       </ul>

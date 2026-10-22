@@ -49,6 +49,22 @@ function readProbe() {
 }
 
 describe("useSnapshot connection lifecycle", () => {
+  it('accepts a first healthy native snapshot with unknown rates without recording a fake zero',()=>{
+    render(<Probe/>);const socket=MockSocket.instances[0];const native=makeSpark('head');
+    Object.assign(native.metrics.llm[0],{backend:'tensorfold',available:true,generationTps:null,prefillTps:null});
+    act(()=>{socket.open();socket.emit({type:'snapshot',generatedAt:50000,sparks:[native]});});
+    expect(readProbe()).toMatchObject({count:1,connected:true,error:null});
+    expect(getMetricHistorySamples('head','llm:8888.tps')).toHaveLength(0);
+  });
+
+  it('ignores stale registry frames without replacing the latest UI snapshot',()=>{
+    render(<Probe/>);const socket=MockSocket.instances[0];
+    act(()=>{socket.open();socket.emit({type:'snapshot',generatedAt:50000,sparks:[makeSpark('head')]});});
+    const before=readProbe();
+    act(()=>socket.emit({type:'snapshot',generatedAt:49000,sparks:[]}));
+    expect(readProbe()).toEqual(before);
+    expect(getMetricHistorySamples('head','llm:8888.tps')).toHaveLength(1);
+  });
   it('keeps the last good snapshot and history when throughput is corrupt', () => {
     render(<Probe/>);const socket=MockSocket.instances[0];
     act(()=>{socket.open();socket.emit({type:'snapshot',generatedAt:50000,sparks:[makeSpark('head')]});});
@@ -60,22 +76,6 @@ describe("useSnapshot connection lifecycle", () => {
     expect(readProbe().error).toContain('无效');
     expect(getMetricHistorySamples('head','llm:8888.tps')).toEqual(before);
     expect(before.length).toBeGreaterThan(0);
-  });
-  it('loads healthy TensorFold with missing rates, skips history, and records true zero on recovery', () => {
-    render(<Probe/>);const socket=MockSocket.instances[0];const spark=makeSpark('head');
-    Object.assign(spark.metrics.llm[0],{backend:'tensorfold',generationTps:null,prefillTps:null});
-    act(()=>{socket.open();socket.emit({type:'snapshot',generatedAt:50000,sparks:[spark]});});
-    expect(readProbe()).toMatchObject({count:1,connected:true,error:null});
-    expect(getMetricHistorySamples('head','llm:8888.tps')).toHaveLength(0);
-    expect(getMetricHistorySamples('head','llm:8888.prefill')).toHaveLength(0);
-    Object.assign(spark.metrics.llm[0],{generationTps:0,prefillTps:100});
-    act(()=>socket.emit({type:'snapshot',generatedAt:50001,sparks:[spark]}));
-    expect(getMetricHistorySamples('head','llm:8888.tps')).toEqual([{at:50001,value:0}]);
-    expect(getMetricHistorySamples('head','llm:8888.prefill')).toEqual([{at:50001,value:100}]);
-    Object.assign(spark.metrics.llm[0],{generationTps:null,prefillTps:null});
-    act(()=>socket.emit({type:'snapshot',generatedAt:50002,sparks:[spark]}));
-    expect(readProbe().error).toBeNull();
-    expect(getMetricHistorySamples('head','llm:8888.tps')).toHaveLength(1);
   });
   beforeEach(() => {
     _resetStore();
@@ -102,9 +102,9 @@ describe("useSnapshot connection lifecycle", () => {
     sessionStorage.clear();
     const send=vi.fn().mockResolvedValue({ok:true,status:202});vi.stubGlobal('fetch',send);
     render(<Probe/>);const socket=MockSocket.instances[0];
-    act(()=>{socket.open();socket.emit({type:'snapshot',bootId:'boot-one',generatedAt:50000,sparks:[makeSpark('worker-fixture',false)]});});
+    act(()=>{socket.open();socket.emit({type:'snapshot',bootId:'boot-one',generatedAt:50000,sparks:[makeSpark('ffda',false)]});});
     await flush();
-    act(()=>socket.emit({type:'snapshot',bootId:'boot-two',generatedAt:50001,sparks:[makeSpark('worker-fixture',true)]}));
+    act(()=>socket.emit({type:'snapshot',bootId:'boot-two',generatedAt:50001,sparks:[makeSpark('ffda',true)]}));
     await flush();await flush();
     const events=send.mock.calls.map(c=>JSON.parse(c[1].body));
     for(const kind of ['snapshot_received','snapshot_applied']){
@@ -117,7 +117,7 @@ describe("useSnapshot connection lifecycle", () => {
     sessionStorage.clear();
     const send=vi.fn().mockResolvedValue({ok:true,status:202});vi.stubGlobal('fetch',send);
     render(<Probe/>);
-    const frame={type:'snapshot',bootId:'same-server',generatedAt:50000,sparks:[makeSpark('worker-fixture',true)]};
+    const frame={type:'snapshot',bootId:'same-server',generatedAt:50000,sparks:[makeSpark('ffda',true)]};
     act(()=>{MockSocket.instances[0].open();MockSocket.instances[0].emit(frame);});
     await flush();await flush();
     act(()=>{MockSocket.instances[0].close();vi.advanceTimersByTime(2100);});

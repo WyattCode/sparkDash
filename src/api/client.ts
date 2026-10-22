@@ -70,7 +70,7 @@ export function runVerification() {
   return apiFetch<import('../components/OverviewPage/verificationModel').Verification>('/api/operations/verification',{method:'POST',body:JSON.stringify({confirm:true})});
 }
 export function fetchOperationsHistory(metric: string, minutes: number) {
-  return apiFetch<{generatedAt: number; series: import('../components/OverviewPage/operationsModel').Series[]}>(`/api/operations/history?metric=${encodeURIComponent(metric)}&minutes=${minutes}`);
+  return apiFetch<{generatedAt: number; source?: string; storageError?: string | null; series: import('../components/OverviewPage/operationsModel').Series[]}>(`/api/operations/history?metric=${encodeURIComponent(metric)}&minutes=${minutes}`);
 }
 
 // ─── Sparks CRUD ─────────────────────────────────────────

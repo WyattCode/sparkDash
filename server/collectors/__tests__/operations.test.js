@@ -3,7 +3,18 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { normalizeSeries, registerOperationsRoutes, QUERIES } from '../../operations.js';
+import { normalizeSeries, registerOperationsRoutes, QUERIES, queriesForBackend } from '../../operations.js';
+
+test('TensorFold windows exclude incompatible counters and old engine series',()=>{
+  const q=queriesForBackend('tensorfold');
+  for(const key of ['itl','queue','httpTotal','httpOk','httpErrors','cache','finished']) assert.equal(q[key],undefined);
+  for(const key of ['output','prefill','running','waiting','ttft','e2e','completed']){
+    assert.match(q[key],/tensorfold/);assert.doesNotMatch(q[key],/sglang|deepseek/);assert.match(q[key],/timestamp/);
+  }
+  assert.match(q.output,/tensorfold_health:completion_tokens_total/);
+  assert.match(q.e2e,/request_latency_seconds_bucket/);
+  assert.equal(queriesForBackend('sglang'),QUERIES);
+});
 
 test('NaN and infinity stay missing; genuine zero remains zero', () => {
   const rows=normalizeSeries([{metric:{node:'test'},values:[[1,'0'],[2,'NaN'],[3,'+Inf'],[4,'4.2']]}]);

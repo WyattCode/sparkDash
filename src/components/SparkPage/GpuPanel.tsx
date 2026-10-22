@@ -37,9 +37,9 @@ function MetricRow({
   color?: string;
 }) {
   return (
-    <div className="flex items-center justify-between text-sm">
-      <span className="text-muted">{label}</span>
-      <div className="flex items-center gap-3">
+    <div className="gpu-metric-row flex items-center justify-between gap-2 text-sm">
+      <span className="shrink-0 whitespace-nowrap text-muted">{label}</span>
+      <div className="flex min-w-0 items-center gap-3">
         <span style={{ color }}>{spark}</span>
         <span className="font-tabular text-sm font-semibold text-text">{value}</span>
       </div>
@@ -95,20 +95,20 @@ export function GpuPanel({ gpu: inputGpu, cpu, sparkId, temperatureUnit, classNa
       <MetricRow
         label="使用率"
         color="var(--color-data)"
-        spark={gpu && <Sparkline data={usageHistory} color="var(--color-data)" width={180} />}
+        spark={gpu && <Sparkline label="GPU 利用率" unit="%" data={usageHistory} source={{sparkId,metric:"gpu.usage"}} color="var(--color-data)" width={180} />}
         value={<span className="text-text-strong">{usage == null ? '未采集' : `${usage}%`}</span>}
       />
       <MetricRow
         label="温度"
         color={tempColor}
-        spark={gpu && <Sparkline data={tempHistory} color={tempColor} width={180} />}
+        spark={gpu && <Sparkline label="GPU 温度" unit="°C" data={tempHistory} source={{sparkId,metric:"gpu.temp"}} color={tempColor} width={180} />}
         value={<span className="text-text-strong">{tempLabel}</span>}
       />
       {cpuTemperature > 0 && (
         <MetricRow
           label="CPU"
           color={cpuTempColor}
-          spark={<Sparkline data={cpuTempHistory} color={cpuTempColor} width={180} />}
+          spark={<Sparkline label="CPU 温度" unit="°C" data={cpuTempHistory} source={{sparkId,metric:"cpu.temp"}} color={cpuTempColor} width={180} />}
           value={<span className="text-text-strong">{cpuTempLabel}</span>}
         />
       )}
@@ -166,7 +166,7 @@ export function GpuPanel({ gpu: inputGpu, cpu, sparkId, temperatureUnit, classNa
             </div>
             <div className="h-1.5 overflow-hidden rounded-full bg-border">
               <div
-                className={`h-full rounded-full transition-[width] duration-300 ease-out ${barColor}`}
+                className={`telemetry-progress-fill h-full rounded-full transition-[width] duration-300 ease-out ${barColor}`}
                 style={{
                   width: `${pct != null ? Math.min(100, Math.max(0, pct)) : 0}%`,
                 }}

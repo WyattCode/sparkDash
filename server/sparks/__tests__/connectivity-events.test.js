@@ -21,32 +21,33 @@ test('journal survives replacement, bounds storage and reports malformed tail',t
 });
 
 test('browser events whitelist fields and cannot forge server evidence',()=>{
-  const b={kind:'snapshot_received',clientId:'tab1',browser:'firefox',states:[{id:'worker-fixture',online:false,password:'secret'}],source:'server',apiKey:'secret',at:1};
-  const c=cleanClientEvent(b,['worker-fixture']);assert.equal(c.source,'browser');assert.equal(c.at,undefined);
+  const b={kind:'snapshot_received',clientId:'tab1',browser:'firefox',states:[{id:'ffda',online:false,password:'secret'}],source:'server',apiKey:'secret',at:1};
+  const c=cleanClientEvent(b,['ffda']);assert.equal(c.source,'browser');assert.equal(c.at,undefined);
   assert.ok(!JSON.stringify(c).includes('secret'));
-  assert.equal(cleanClientEvent({...b,kind:'server_stop'},['worker-fixture']),null);
-  assert.equal(cleanClientEvent({...b,states:[{id:'unknown',online:false}]},['worker-fixture']),null);
+  assert.equal(cleanClientEvent({...b,kind:'server_stop'},['ffda']),null);
+  assert.equal(cleanClientEvent({...b,states:[{id:'unknown',online:false}]},['ffda']),null);
   assert.equal(classifyProbeError(Error('SSH banner exchange timed out secret')).category,'ssh_banner_timeout');
   assert.ok(!JSON.stringify(classifyProbeError(Error('password=secret'))).includes('secret'));
 });
 
-test('record failures during grace, offline transition and recovery with backoff',async t=>{
-  let clock=Date.now();t.mock.method(Date,'now',()=>clock);
-  const events=[];const m=new SparkMonitor({id:'worker-fixture',name:'worker-fixture',isLocal:false,lanIp:'127.0.0.1',llmMonitoring:false,comfyMonitoring:false},{onConnectivity:e=>events.push(e)});
+test('record failures during grace, offline transition and recovery with scheduled retries',async t=>{
+  let now=100000;t.mock.method(Date,'now',()=>now);
+  const events=[];const m=new SparkMonitor({id:'ffda',name:'ffda',isLocal:false,lanIp:'127.0.0.1',llmMonitoring:false,comfyMonitoring:false},{onConnectivity:e=>events.push(e)});
   m._running=true;m._readUptime=async()=>123;
   await m._checkOnline();assert.equal(m.online,true);assert.equal(events.at(-1).kind,'probe_recovered');
   m._readUptime=async()=>{throw Error('Connection timed out during banner exchange');};
   await m._checkOnline();assert.equal(m.online,true);assert.equal(events.at(-1).kind,'probe_failure');assert.equal(events.at(-1).lastError.category,'ssh_banner_timeout');
-  clock+=16000;
+  now+=11000;
   await m._checkOnline();assert.equal(m.online,false);assert.equal(events.at(-1).online,false);
-  clock+=16000;m._readUptime=async()=>124;await m._checkOnline();assert.equal(m.online,true);assert.equal(events.at(-1).previousFailures,2);
+  now=m._nextLivenessAt;
+  m._readUptime=async()=>124;await m._checkOnline();assert.equal(m.online,true);assert.equal(events.at(-1).previousFailures,2);
   assert.equal(m.snapshot().connectivity.phase,'online');
 });
 
 test('correlation survives Prometheus failure without changing node event',async t=>{
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'connectivity-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
-  const r=createConnectivityEvents({file:path.join(dir,'events'),nodeIds:()=>['worker-fixture'],snapshots:()=>[],fetchImpl:async()=>{throw Error('offline');}});
-  r.record({source:'monitor',kind:'probe_failure',node:'worker-fixture'});
+  const r=createConnectivityEvents({file:path.join(dir,'events'),nodeIds:()=>['ffda'],snapshots:()=>[],fetchImpl:async()=>{throw Error('offline');}});
+  r.record({source:'monitor',kind:'probe_failure',node:'ffda'});
   await new Promise(resolve=>setTimeout(resolve,10));
   assert.equal(r.journal.events[0].kind,'probe_failure');assert.equal(r.journal.events[1].available,false);
   assert.equal(r.journal.events[1].causeEventId,r.journal.events[0].eventId);

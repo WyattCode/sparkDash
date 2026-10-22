@@ -1,3 +1,4 @@
+import { SmoothTrace } from "../ui/SmoothTrace";
 import { useMemo } from "react";
 import { HISTORY_MAX, useMetricsHistory, useTimedMetricsHistory, avgPositive } from "../../hooks/metricsStore";
 import type { TimedSample } from "../../hooks/ringBuffer";
@@ -44,12 +45,7 @@ export function buildSegments(data: readonly TimedSample[], max: number, endAt =
   return segments.filter((segment) => segment.length > 1).map((segment) => segment.join(" "));
 }
 
-function areaPath(points: string): string {
-  const seg = points.split(" ");
-  const first = seg[0]?.split(",")[0] ?? "0";
-  const last = seg[seg.length - 1]?.split(",")[0] ?? first;
-  return `M${first},${VIEW_H} L${points} L${last},${VIEW_H} Z`;
-}
+const tracePoints=(points:string)=>points.split(" ").map(pair=>{const [x,y]=pair.split(",").map(Number);return {x,y};});
 
 /** Human label: chart shows the last window; averages span full retention. */
 function fmtSpan(seconds: number): string {
@@ -82,9 +78,11 @@ function windowed(data: readonly number[]): readonly number[] {
 export function LlmTrendChart({
   sparkId,
   llmPort,
+  completedInput=false,
 }: {
   sparkId: string;
   llmPort: number;
+  completedInput?: boolean;
 }) {
   const gen = useMetricsHistory(sparkId, `llm:${llmPort}.tps`);
   const prefill = useMetricsHistory(sparkId, `llm:${llmPort}.prefill`);
@@ -127,37 +125,10 @@ export function LlmTrendChart({
           className="block w-full"
           style={{ height: 64 }}
           role="img"
-          aria-label="过去 30 分钟的生成与预填充吞吐量"
+          aria-label={completedInput?'过去 30 分钟的实时输出与已完成请求输入速率':'过去 30 分钟的生成与预填充吞吐量'}
         >
-          {prefillPts.map((points, index) => (
-            <g key={`prefill-${index}`}>
-              <path d={areaPath(points)} fill="var(--color-text)" opacity={0.1} />
-              <polyline
-                points={points}
-                fill="none"
-                stroke="var(--color-text)"
-                strokeDasharray="4 3"
-                strokeWidth="1.5"
-                vectorEffect="non-scaling-stroke"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-            </g>
-          ))}
-          {genPts.map((points, index) => (
-            <g key={`gen-${index}`}>
-              <path d={areaPath(points)} fill="var(--color-data)" opacity={0.12} />
-              <polyline
-                points={points}
-                fill="none"
-                stroke="var(--color-data)"
-                strokeWidth="1.5"
-                vectorEffect="non-scaling-stroke"
-                strokeLinejoin="round"
-                strokeLinecap="round"
-              />
-            </g>
-          ))}
+          {prefillPts.map((points,index)=><SmoothTrace key={`prefill-${index}`} points={tracePoints(points)} color="var(--color-text)" dashed areaBase={VIEW_H} fillOpacity={.1} motionKey={`${sparkId}:${llmPort}:prefill:${index}`}/>)}
+          {genPts.map((points,index)=><SmoothTrace key={`gen-${index}`} points={tracePoints(points)} color="var(--color-data)" areaBase={VIEW_H} motionKey={`${sparkId}:${llmPort}:gen:${index}`}/>)}
         </svg>
       )}
       <div className="flex flex-wrap items-center justify-between gap-x-2 gap-y-0.5 text-[10px] text-muted">
@@ -166,7 +137,7 @@ export function LlmTrendChart({
           <span className="font-tabular text-xs text-data">{fmt(genAvg)}</span>
         </span>
         <span>
-          预填充平均值{" "}
+          {completedInput?'完成输入平均值':'预填充平均值'}{" "}
           <span className="font-tabular text-xs text-text">{fmt(prefillAvg)}</span>
         </span>
         <span>

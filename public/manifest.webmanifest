@@ -2,7 +2,7 @@
   "id": "/",
   "name": "sparkDash AI 集群监控",
   "short_name": "sparkDash",
-  "description": "DGX Spark 集群实时监控与模型服务控制台，需要连接集群网络。",
+  "description": "AI TOP ATOM 集群实时监控与模型服务控制台，需要连接集群网络。",
   "lang": "zh-CN",
   "start_url": "/",
   "scope": "/",

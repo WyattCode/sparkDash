@@ -1,9 +1,10 @@
+import { useOverlayClose } from "../hooks/useOverlayClose";
+import { displayName } from '../displayName';
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   deleteSpark,
   fetchSparks,
-  setSparkPassword,
   testSpark,
   testSparkConfig,
   updateSpark,
@@ -59,7 +60,6 @@ function EditSparkSession({
   const [saving, setSaving] = useState(false);
   const [testResult, setTestResult] = useState<SparkTestResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [savedPasswordNote, setSavedPasswordNote] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [portText, setPortText] = useState("8188");
   const [deleting, setDeleting] = useState(false);
@@ -72,6 +72,7 @@ function EditSparkSession({
   const portValid = !config?.comfyMonitoring || (/^\d+$/.test(portText) && Number(portText) >= 1 && Number(portText) <= 65535);
   const valid = !!config && !!config.name.trim() && (config.isLocal || !!config.lanIp.trim()) && portValid;
   const close = () => { if (open && !lock.current) onClose(); };
+  const overlayClose = useOverlayClose(close, open && !busy);
 
   useEscape(close);
 
@@ -99,7 +100,6 @@ function EditSparkSession({
       setPassword("");
       setTestResult(null);
       setError(null);
-      setSavedPasswordNote(null);
       return;
     }
     let cancelled = false;
@@ -107,7 +107,6 @@ function EditSparkSession({
     setConfig(null);
     setSavedConfig(null);
     setPassword("");
-    setSavedPasswordNote(null);
     setTestResult(null);
     setConfirmDelete(false);
     setDeleteWord("");
@@ -158,27 +157,18 @@ function EditSparkSession({
     setConfig((prev) => (prev ? { ...prev, ssh: { ...prev.ssh, ...patch } } : prev));
   };
 
+  const targetChanged = !!config && !!savedConfig && (
+    config.isLocal !== savedConfig.isLocal ||
+    (config.ssh.host || config.lanIp) !== (savedConfig.ssh.host || savedConfig.lanIp) ||
+    config.ssh.user !== savedConfig.ssh.user
+  );
   const needsPassword =
-    !config?.isLocal && config?.ssh.auth === "pass" && !config.ssh.hasPassword && !password;
-
-  /** Persist password immediately (host can be offline). */
-  const persistPasswordIfEntered = async () => {
-    if (!config || !password) return false;
-    await setSparkPassword(config.id, password);
-    if (!alive.current) return true;
-    setConfig((prev) =>
-      prev
-        ? { ...prev, ssh: { ...prev.ssh, hasPassword: true } }
-        : prev
-    );
-    setSavedPasswordNote("SSH 密码已加密保存；节点配置尚未确认保存。即使后续失败，密码也已更新。");
-    setPassword(""); // clear field — keep as stored secret
-    return true;
-  };
+    !config?.isLocal && config?.ssh.auth === "pass" &&
+    (!config.ssh.hasPassword || targetChanged) && !password;
 
   const handleTest = async () => {
     if (!config || !valid || lock.current) return;
-    if (!config.isLocal && config.ssh.auth === "pass" && !config.ssh.hasPassword && !password) {
+    if (needsPassword) {
       setError("请先填写 SSH 密码。测试不会保存密码或配置。");
       return;
     }
@@ -232,7 +222,7 @@ function EditSparkSession({
 
   const handleSave = async () => {
     if (!config || !valid || lock.current) return;
-    if (!config.isLocal && config.ssh.auth === "pass" && !config.ssh.hasPassword && !password) {
+    if (needsPassword) {
       setError("密码认证需要填写密码，将加密保存，主机可以离线。");
       return;
     }
@@ -240,12 +230,8 @@ function EditSparkSession({
     setSaving(true);
     setError(null);
     try {
-      // Save password first so it is never lost if the rest of the update fails
-      if (password) {
-        await persistPasswordIfEntered();
-        if (!alive.current) return;
-      }
-
+      // Submit destination and credentials together; never overwrite the old
+      // destination's password before the configuration has been saved.
       const patch: Partial<SparkConfig> = {
         name: config.name.trim(),
         kind: config.kind ?? "spark",
@@ -270,6 +256,7 @@ function EditSparkSession({
           host: config.ssh.host || config.lanIp,
           user: config.ssh.user,
           auth: config.ssh.auth,
+          ...(password ? { password } : {}),
         },
       };
       await updateSpark(config.id, patch);
@@ -308,9 +295,7 @@ function EditSparkSession({
   return createPortal(
     <div
       className={`modal-overlay${visible ? " is-open" : ""}`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) close();
-      }}
+      {...overlayClose}
     >
       <div
         ref={trapRef}
@@ -586,7 +571,7 @@ function EditSparkSession({
                             sRole === "head" ? "（主节点）" : sRole === "worker" ? "（工作节点）" : "";
                           return (
                             <option key={s.id} value={s.id}>
-                              {s.name}{suffix}
+                              {displayName(s.name)}{suffix}
                             </option>
                           );
                         })}
@@ -622,7 +607,7 @@ function EditSparkSession({
                     </select>
                     {config.ssh.auth === "key" && (
                       <p className="mt-1 text-[10px] text-muted">
-                        SSH 从 sparkDash 主机发起。Docker 中请挂载 /root/.ssh/id_ed25519 或配置 SSH_IDENTITY_FILE。IP 必须从该主机可达，并非从浏览器所在电脑访问。
+                        SSH 从 SparkDash 主机发起。Docker 中请挂载 /root/.ssh/id_ed25519 或配置 SSH_IDENTITY_FILE。IP 必须从该主机可达，并非从浏览器所在电脑访问。
                       </p>
                     )}
                   </div>
@@ -631,7 +616,7 @@ function EditSparkSession({
                     <div>
                       <label className="mb-1 block text-xs text-muted">
                         SSH 密码
-                        {config.ssh.hasPassword
+                        {config.ssh.hasPassword && !targetChanged
                           ? "（留空保留已保存的密码）"
                           : "（必填，主机离线也会保存）"}
                       </label>
@@ -641,9 +626,13 @@ function EditSparkSession({
                         onChange={(e) => { setPassword(e.target.value); setTestResult(null); setError(null); }}
                         className="w-full rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text outline-none focus:border-accent"
                         autoComplete="new-password"
-                        placeholder={config.ssh.hasPassword ? "••••••••" : "输入密码"}
+                        placeholder={config.ssh.hasPassword && !targetChanged ? "••••••••" : "输入密码"}
                       />
-                      {config.ssh.hasPassword ? (
+                      {targetChanged ? (
+                        <p className="mt-1 text-[10px] text-warning">
+                          连接目标已更改，请重新输入密码；旧凭据不会用于新目标。
+                        </p>
+                      ) : config.ssh.hasPassword ? (
                         <p className="mt-1 text-[10px] text-muted">
                           密码在服务器端加密保存；节点离线时仍保留，上线后可恢复连接。
                         </p>
@@ -660,7 +649,6 @@ function EditSparkSession({
           )}
 
           {testResult && <ConnectivityResult result={testResult} />}
-          {savedPasswordNote && <p role="status" className="mt-2 text-xs text-warning">{savedPasswordNote}</p>}
 
           {error && (
             <div role="alert" className="mt-3 rounded bg-danger/20 px-3 py-2 text-xs text-danger">{error}</div>
@@ -668,7 +656,7 @@ function EditSparkSession({
           {!config && !loading && <button className={secondaryButton} onClick={() => setRetry(n => n + 1)}>重新加载节点</button>}
           {config && error && !busy && <button className={secondaryButton} onClick={() => setRetry(n => n + 1)}>放弃草稿并重新加载</button>}
           {confirmDelete && config && <div className="mt-3 space-y-3 rounded border border-danger/40 p-3">
-            <p className="text-xs text-danger">确认从 sparkDash 移除“{config.name}”？将删除该节点配置及保存的凭据，并停止本控制台对它的采集；不会关机或停止模型。恢复监控需要重新添加节点。</p>
+            <p className="text-xs text-danger">确认从 SparkDash 移除“{displayName(config.name)}”？将删除该节点配置及保存的凭据，并停止本控制台对它的采集；不会关机或停止模型。恢复监控需要重新添加节点。</p>
             <label className="block text-xs text-muted">输入节点 ID：<code>{config.id}</code>
               <input aria-label="移除确认节点 ID" value={deleteWord} disabled={busy} onChange={e => setDeleteWord(e.target.value)} className="mt-2 w-full rounded border border-border bg-surface-elevated px-3 py-2 text-text" />
             </label>

@@ -1,3 +1,6 @@
+import { registerControlAdmission } from './controlAdmission.js';
+import { hasOpenClients, installListenErrorHandler } from './runtimeSafety.js';
+import { registerRoceRoutes } from './roceRoutes.js';
 import express from "express";
 import { assertBenchmarkAdmission } from './taskAdmission.js';
 import { createServer } from "http";
@@ -43,6 +46,8 @@ import { closeLlmStreamAgent } from "./collectors/LlmStreaming.js";
 import { compareSemver, getLatestRelease } from "./collectors/HermesReleases.js";
 import { FLEET_ENERGY_JSON_PATH } from "./config.js";
 import { FleetEnergyTracker } from "./energy/FleetEnergyTracker.js";
+import { LlmTokenLedger } from './llmtokens/LlmTokenLedger.js';
+import { createLlmTokenRuntime } from './llmtokens/LlmTokenRuntime.js';
 import {
   createFleetEnergyRuntime,
   registerFleetEnergyRoute,
@@ -250,6 +255,7 @@ function consumeBenchStartQuota(req, res) {
 
 // ─── Spark registry ──────────────────────────────────────
 const registry = new SparkRegistry();
+const tokenLedger = new LlmTokenLedger(path.join(ROOT,'config','llm-token-totals.json'));
 
 const fleetEnergyTracker = new FleetEnergyTracker({
   nodeIds: registry.sparkIds,
@@ -317,6 +323,7 @@ const fleetEnergyRuntime = createFleetEnergyRuntime({
   orderedSnapshots,
   monitors,
 });
+const tokenRuntime = createLlmTokenRuntime({ledger:tokenLedger,orderedSnapshots});
 
 // ─── Express app ─────────────────────────────────────────
 const app = express();
@@ -324,8 +331,14 @@ const server = createServer(app);
 
 app.use(express.json());
 app.use(createAuthMiddleware());
+registerControlAdmission(app, {
+  file: path.join(ROOT, 'config', 'control-operation.json'),
+  readSecret: () => fs.readFileSync('/host/root/home/wyatt/dgx-control-center/data/access-code', 'utf8'),
+  activeJobs: () => registry.sparkIds.some(id => decodeBenchManager.getActive(id) || prefillBenchManager.getActive(id) || showcaseManager.getActive(id)),
+});
 connectivityEvents.register(app);
-registerOperationsRoutes(app, orderedSnapshots, path.join(ROOT, 'config', 'operations-events.json'), id=>registry.getSpark(id));
+const nativeOperationsRuntime = registerOperationsRoutes(app, orderedSnapshots, path.join(ROOT, 'config', 'operations-events.json'),id=>registry.getSpark(id));
+registerRoceRoutes(app, registry);
 registerVerificationRoutes(app, {snapshots:orderedSnapshots,getSpark:id=>registry.getSpark(id),file:path.join(ROOT,'config','service-verification.json')});
 
 app.get("/api/health", (_req, res) => {
@@ -338,6 +351,7 @@ function clientKey(req) {
 
 // ─── REST API ────────────────────────────────────────────
 registerFleetEnergyRoute(app, fleetEnergyTracker);
+app.get('/api/llm-token-totals', (req,res) => res.json(tokenLedger.snapshot(req.query.range)));
 
 // Never return SSH passwords in any response
 app.get("/api/sparks", (_req, res) => {
@@ -415,10 +429,11 @@ app.patch("/api/sparks/:id", (req, res) => {
   try {
     const body = req.body || {};
     // Only validate host fields if they are being updated
-    if (body.lanIp != null || body.ssh?.host != null || body.ssh?.user != null) {
+    if (body.isLocal != null || body.lanIp != null || body.ssh?.host != null || body.ssh?.user != null) {
       const existing = registry.getSpark(req.params.id);
       if (!existing) return res.status(404).json({ error: "Spark not found" });
       const merged = {
+        isLocal: body.isLocal ?? existing.isLocal,
         lanIp: body.lanIp ?? existing.lanIp,
         ssh: { ...existing.ssh, ...(body.ssh || {}) },
       };
@@ -1581,7 +1596,6 @@ wss.on("connection", (ws) => {
 
 // ─── Broadcast snapshot (dynamic interval) ────────────────
 let broadcastTimer = null;
-let _lastBroadcastPayload = null;
 
 /** Build the snapshot payload string. Centralized so broadcast + refresh share it. */
 function buildSnapshotPayload() {
@@ -1625,19 +1639,16 @@ function broadcastPayload(payload) {
  * UI reflects the result right away instead of on the next poll tick.
  */
 function forceBroadcast() {
+  if (!hasOpenClients(wss.clients)) return;
   const payload = buildSnapshotPayload();
-  _lastBroadcastPayload = payload;
   broadcastPayload(payload);
 }
 
 function startBroadcast() {
   const interval = getSettings().pollIntervalMs;
   broadcastTimer = setInterval(() => {
+    if (!hasOpenClients(wss.clients)) return;
     const payload = buildSnapshotPayload();
-    // Skip the broadcast entirely when nothing changed since the last tick.
-    // A 1s poll that produces identical snapshots becomes free for idle tabs.
-    if (_lastBroadcastPayload !== null && payload === _lastBroadcastPayload) return;
-    _lastBroadcastPayload = payload;
     broadcastPayload(payload);
   }, interval);
 }
@@ -1647,7 +1658,6 @@ function restartBroadcast() {
     clearInterval(broadcastTimer);
     broadcastTimer = null;
   }
-  _lastBroadcastPayload = null; // force a fresh broadcast on the new cadence
   startBroadcast();
 }
 
@@ -1658,6 +1668,7 @@ logStartupPreflight(startupPreflight, BIND_HOST, PORT);
 
 if (!startupPreflight.fatal) {
   startBroadcast();
+  installListenErrorHandler(server, BIND_HOST, PORT, {webSocket:wss});
   server.listen(PORT, BIND_HOST, () => {
     console.log(`[sparkDash] server listening on http://${BIND_HOST}:${PORT}`);
     console.log(`[sparkDash] WebSocket endpoint ws://${BIND_HOST}:${PORT}/ws`);
@@ -1669,6 +1680,7 @@ if (!startupPreflight.fatal) {
     }
     startAllMonitors();
     fleetEnergyRuntime.start();
+    tokenRuntime.start();
   });
 } else {
   process.exitCode = 1;
@@ -1699,6 +1711,9 @@ async function shutdown(signal) {
     console.error("[sparkDash] failed to flush LLM daily history:", err.message);
   }
   const energyPersistenceSucceeded = fleetEnergyRuntime.stop();
+  let tokenPersistenceSucceeded=true;
+  nativeOperationsRuntime.close();
+  try { tokenRuntime.stop(); } catch(e) {tokenPersistenceSucceeded=false;console.error('[LlmTokenLedger] shutdown save failed:',e.message);}
   const streamAgentClosedGracefully = await closeLlmStreamAgent();
   if (!streamAgentClosedGracefully) {
     console.warn("[sparkDash] LLM dispatcher close timed out; destroyed open sockets");
@@ -1726,7 +1741,7 @@ async function shutdown(signal) {
     /* ignore */
   }
   wss.close();
-  server.close(() => process.exit(energyPersistenceSucceeded ? 0 : 1));
+  server.close(() => process.exit(energyPersistenceSucceeded && tokenPersistenceSucceeded ? 0 : 1));
   // Safety net: if server.close hangs (lingering keep-alive), force-exit.
   setTimeout(() => process.exit(1), 3000).unref();
 }

@@ -1,20 +1,21 @@
 {
-  "created_utc": "2026-10-22T11:54:08.297686+00:00",
-  "backend_commit": "6c2dbde4d824d41f25dd4b3be289a2da7b3e631a",
-  "frontend_origin": "http://192.168.10.233:5555/ (compiled assets; exact source commit unknown)",
-  "archive_sha256": "111a6a889c49c347cdd75c9d6f0a269a7109b65eda4af6835707b05aec98dc59",
+  "created_utc": "2026-10-22T16:54:17.980773+00:00",
+  "frontend_origin": "192.168.10.233 full source + AI TOP ATOM branding and native TensorFold adapter",
+  "backend_source": "Current repository server/; complete frontend source in src/",
+  "source_base_commit": "36ec6ed",
+  "archive_sha256": "0fa01a4115e297e21d4b8b1156ebef650c930625bf9c0f343b5eb6893d23dee5",
   "files": {
     "assets/InterVariable-DiVDrmQJ.woff2": "693b77d4f32ee9b8bfc995589b5fad5e99adf2832738661f5402f9978429a8e3",
-    "assets/index-ZorAO5mU.css": "fd31543224bf8a3d1fa7dcfab9a51645880252bab45888c9bf7e56c27a01067f",
-    "assets/index-atom-81310009e3.js": "81310009e363e5ac560a8f29da013019d8bf56b2aeec469ac20009d1d63a0c15",
+    "assets/index-C6nozq71.js": "6a69c1a6e0791a14d2e9d8cdf027ee29dba890ef0bdc5c40ba99aae8bb152a16",
+    "assets/index-ryX0_TbC.css": "e97f84f29430cff9c54e78e7d641f23e4569b87518987eb8a09679f994184f77",
     "atom-device.svg": "66a37b93a5bc65f6be8b3724537ee82af0ad54773764c80a265113789cb3c64b",
     "atom-theme.css": "0b72981815762ace8052e48eeb79ed576391fca13594e710607c1657c911e1de",
+    "icons/favicon.svg": "ca2bfe3c255a73c61184ae375919e3d35afab22ff54e1fab3140bebbfb6ab5d8",
     "icons/sparkdash-192.png": "f27b3929fc7eaf3c3f9ba855cc534f78b3f925e30342ad5841ba25dbec473e10",
     "icons/sparkdash-512.png": "18f80a16e549ee3aec9f143a9e382f97cc770876e4cadc3f9e108e9aa526a221",
     "icons/sparkdash-maskable-512.png": "18f80a16e549ee3aec9f143a9e382f97cc770876e4cadc3f9e108e9aa526a221",
     "icons/sparkdash.svg": "fdeec6a7194eb968853c4258982a6692fa2f0c25afd62b18508d7132804182cd",
-    "index.html": "7d8e4768edceb21d501d0d4d66eb60a503a6c11fbf54c91d22adf90ec7dbf765",
-    "manifest.webmanifest": "5fabc9bfd4d75652ef4fef2242bcee8a452db78a4da4dc002fa97023dfd8a9e8"
-  },
-  "backend_local_patch": "TensorFold native metrics adapter, see HANDOFF-AI-TOP-ATOM.md"
+    "index.html": "06c020a50a96878e1eae1decf89219c7609fa42c799145a97a1ad1dd79ad5e66",
+    "manifest.webmanifest": "d9c4134e4222e350deb157775ff232eb0698676baebc18c740f951618831a7d4"
+  }
 }

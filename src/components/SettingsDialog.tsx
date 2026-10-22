@@ -1,3 +1,4 @@
+import { useOverlayClose } from "../hooks/useOverlayClose";
 import { useEffect, useId, useState } from "react";
 import { fetchSettings, updateSettings } from "../api/client";
 import type { Settings } from "../api/types";
@@ -59,6 +60,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
   const [error, setError] = useState<string | null>(null);
   const [baseline, setBaseline] = useState<Settings | null>(null);
   const [retry,setRetry]=useState(0);
+  const overlayClose = useOverlayClose(onClose, open && !saving);
 
   useEscape(open&&!saving,onClose);
   const titleId=useId();
@@ -128,9 +130,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
       className={`settings-overlay fixed inset-0 z-50 flex justify-center bg-black/55 p-0 sm:p-4${
         visible ? " is-open" : ""
       }`}
-      onClick={(e) => {
-        if (!saving&&e.target === e.currentTarget) onClose();
-      }}
+      {...overlayClose}
     >
       <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className="settings-panel settings-panel--preferences w-full">
         <h2 id={titleId} className="shrink-0 px-6 pt-6 text-sm font-semibold text-text-strong">设置</h2>
@@ -191,13 +191,13 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
             <div className="settings-switch-list">
               <SettingsSwitch title="自动隐藏离线节点" detail="仅影响概览中的节点显示，不会移除节点配置。"
                 checked={settings.autoHideOffline} onChange={() => update({ autoHideOffline: !settings.autoHideOffline })} />
-              <SettingsSwitch title="隐藏工作节点" detail="在概览和标签栏中隐藏；直接链接、批量电源和 Hermes 操作仍包含这些节点。"
+              <SettingsSwitch title="隐藏工作节点" detail="仅在概览隐藏；节点监控、直接链接、批量电源和 Hermes 操作仍包含这些节点。"
                 checked={Boolean(settings.hideWorkers)} onChange={() => update({ hideWorkers: !settings.hideWorkers })} />
-              <SettingsSwitch title="显示搜索和状态筛选" detail="同时显示节点搜索框与全部、在线、离线、异常筛选。"
+              <SettingsSwitch title="显示搜索和状态筛选" detail="在概览显示搜索与状态筛选；节点监控始终提供筛选。"
                 checked={Boolean(settings.showOverviewSearch)} onChange={() => update({ showOverviewSearch: !settings.showOverviewSearch })} />
-              <SettingsSwitch title="显示集群能耗" detail="显示基于集群功耗的滚动估算卡片，并非电表计量。"
+              <SettingsSwitch title="概览显示能耗入口" detail="在概览增加能耗快捷入口；估算详情统一在运行分析查看，并非电表计量。"
                 checked={Boolean(settings.showFleetEnergy)} onChange={() => update({ showFleetEnergy: !settings.showFleetEnergy })} />
-              <SettingsSwitch title="显示集群当前异常" detail="显示离线、GPU 降频、磁盘、模型和 Tailnet 异常。"
+              <SettingsSwitch title="显示集群正常摘要" detail="无异常时也显示状态摘要；已发现的异常始终在概览显示。"
                 checked={Boolean(settings.showFleetExceptions)} onChange={() => update({ showFleetExceptions: !settings.showFleetExceptions })} />
             </div>
             <h3 className="settings-section-title">界面显示</h3>
@@ -231,15 +231,15 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
           open={installationExpanded} onToggle={e => setInstallationExpanded(e.currentTarget.open)}>
           <summary tabIndex={0} className="text-sm font-medium text-text-strong">安装到桌面</summary>
           <p className="mt-2 text-xs text-muted" role="status">
-            {installation.installed ? '已安装，可从桌面或应用启动器打开 sparkDash。' : installation.message || (installation.ready ? '浏览器已允许安装，可添加到桌面并以独立窗口打开。' : !installation.secure ? '当前为 HTTP 局域网地址。可在 Android 浏览器菜单中尝试“添加到主屏幕”；完整应用安装需要可信 HTTPS，当前可能只能创建快捷方式，菜单选项因浏览器而异。' : '在浏览器菜单中查找“安装应用”或“添加到主屏幕”（选项因浏览器而异）。浏览器允许安装后，此处也会显示安装按钮。')}
+            {installation.installed ? '已安装，可从桌面或应用启动器打开 SparkDash。' : installation.message || (installation.ready ? '浏览器已允许安装，可添加到桌面并以独立窗口打开。' : !installation.secure ? '当前为 HTTP 局域网地址。可在 Android 浏览器菜单中尝试“添加到主屏幕”；完整应用安装需要可信 HTTPS，当前可能只能创建快捷方式，菜单选项因浏览器而异。' : '在浏览器菜单中查找“安装应用”或“添加到主屏幕”（选项因浏览器而异）。浏览器允许安装后，此处也会显示安装按钮。')}
           </p>
-          {installationExpanded && !installation.installed && installation.ready && <button type="button" className="mt-3 rounded border border-border px-3 py-2 text-sm text-accent" disabled={installation.busy} onClick={() => void installation.install()}>{installation.busy ? '正在打开安装提示…' : '安装 sparkDash'}</button>}
+          {installationExpanded && !installation.installed && installation.ready && <button type="button" className="mt-3 rounded border border-border px-3 py-2 text-sm text-accent" disabled={installation.busy} onClick={() => void installation.install()}>{installation.busy ? '正在打开安装提示…' : '安装 SparkDash'}</button>}
           <p className="mt-2 text-xs text-muted">安装后仍需连接集群所在网络；不提供离线监控，不缓存实时指标。</p>
         </details>
 
         {/* Links */}
         <div className="mt-5 flex flex-wrap items-center gap-3 border-t border-border pt-3">
-          <span className="text-[10px] text-muted">sparkDash v{packageJson.version}</span>
+          <span className="text-[10px] text-muted">SparkDash v{packageJson.version}</span>
           <span className="text-border-strong text-[10px]">·</span>
           <a
             href="https://x.com/MiaAI_lab"

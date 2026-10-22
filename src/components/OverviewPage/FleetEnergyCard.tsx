@@ -23,12 +23,12 @@ export function FleetEnergyCard({ nodeCount }: { nodeCount: number }) {
   }, []);
 
   const coverage = data && nodeCount > 0
-    ? Math.min(100, (data.coverage24hMs / DAY_MS) * 100)
+    ? Math.max(0, Math.min(100, (data.coverage24hMs / (data.coverage24hWindowMs && data.coverage24hWindowMs > 0 ? data.coverage24hWindowMs : DAY_MS)) * 100))
     : 0;
   const state = error
     ? `能耗遥测不可用： ${error}`
     : data?.membershipChanged
-      ? "集群成员已变更，请重启 sparkDash 以重新建立统计范围。"
+      ? "集群成员已变更，请重启 SparkDash 以重新建立统计范围。"
       : !data
         ? "正在加载集群能耗…"
         : data.freshNodeCount < nodeCount

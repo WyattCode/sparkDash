@@ -1,3 +1,4 @@
+import { useOverlayClose } from "../../hooks/useOverlayClose";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ReactNode } from "react";
@@ -282,6 +283,7 @@ export function HermesUpdateDialog() {
   const target = useHermesUpdateDialog();
   const open = target !== null;
   const { mounted, visible } = useModalPresence(open);
+  const overlayClose = useOverlayClose(closeHermesUpdateDialog, open);
   const [upd, setUpd] = useState<HermesUpdatesResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -348,9 +350,7 @@ export function HermesUpdateDialog() {
   return createPortal(
     <div
       className={`modal-overlay${visible ? " is-open" : ""}`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) closeHermesUpdateDialog();
-      }}
+      {...overlayClose}
     >
       <div
         className="modal-sheet modal-sheet--wide"

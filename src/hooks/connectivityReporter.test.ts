@@ -8,12 +8,12 @@ it('queues outage evidence then drains on recovery, including offline and online
   const r=createConnectivityReporter();r.record('ws_close',{closeCode:1006});
   await vi.advanceTimersByTimeAsync(1);
   expect(JSON.parse(sessionStorage.getItem('sparkdash-connectivity-pending-v1')||'[]')).toHaveLength(1);
-  r.record('snapshot_received',{states:[{id:'worker-fixture',online:false}],serverBootId:'boot1'});
-  r.record('snapshot_applied',{states:[{id:'worker-fixture',online:true}],serverBootId:'boot2'});
+  r.record('snapshot_received',{states:[{id:'ffda',online:false}],serverBootId:'boot1'});
+  r.record('snapshot_applied',{states:[{id:'ffda',online:true}],serverBootId:'boot2'});
   await vi.advanceTimersByTimeAsync(1);
   const sent=send.mock.calls.slice(1).map(c=>JSON.parse(c[1].body));
   expect(sent.map(e=>e.kind)).toEqual(['ws_close','snapshot_received','snapshot_applied']);
-  expect(sent[1].states[0]).toEqual({id:'worker-fixture',online:false});
+  expect(sent[1].states[0]).toEqual({id:'ffda',online:false});
   expect(JSON.parse(sessionStorage.getItem('sparkdash-connectivity-pending-v1')||'[]')).toHaveLength(0);
   r.dispose();
 });

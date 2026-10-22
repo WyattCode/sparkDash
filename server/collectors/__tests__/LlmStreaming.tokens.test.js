@@ -18,7 +18,14 @@ import {
   sleep,
   closeLlmStreamAgent,
   runStreamingRequest,
+  readServerGenerationTokens,
 } from "../LlmStreaming.js";
+
+test('TensorFold live output counter is preferred without probing its health endpoint',async()=>{
+  const original=globalThis.fetch;const calls=[];
+  globalThis.fetch=async(url)=>{calls.push(url);return {ok:true,text:async()=> 'tensorfold_health:completion_tokens_total 200\ntensorfold:generation_tokens_total 150\n'};};
+  try{assert.equal(await readServerGenerationTokens('http://fixture'),200);assert.deepEqual(calls,['http://fixture/metrics']);}finally{globalThis.fetch=original;}
+});
 
 test("sleep removes its abort listener after normal completion", async () => {
   const controller = new AbortController();
@@ -83,6 +90,81 @@ test("runStreamingRequest reaches an OpenAI SSE endpoint", async () => {
     assert.ok(result.completionTokens >= 1);
   } finally {
     await new Promise((resolve) => server.close(resolve));
+  }
+});
+
+test('stream errors and incomplete EOF never count as successful generation', async () => {
+  const cases = [
+    ['data: {"error":{"message":"repetition protection","type":"repetition_error"}}\n\ndata: [DONE]\n\n', /流式.*错误/],
+    ['event: error\ndata: {"error":{"message":"repetition protection","type":"repetition_error"}}\n\ndata: [DONE]\n\n', /流式.*错误/],
+    ['event: error\ndata: {"message":"backend failed"}\n\n', /流式.*错误/],
+    ['data: {"choices":[{"delta":{},"finish_reason":"error"}]}\n\ndata: [DONE]\n\n', /流式.*错误/],
+    ['', /未正常结束/],
+  ];
+  for (const [tail, expected] of cases) {
+    const server = http.createServer((req,res) => {
+      req.resume();res.writeHead(200,{'Content-Type':'text/event-stream'});
+      res.end('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'+tail);
+    });
+    await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+    try {
+      const result=await runStreamingRequest(`http://127.0.0.1:${server.address().port}/v1/chat/completions`,{stream:true},AbortSignal.timeout(5000),{collectContent:true});
+      assert.match(result.error || '',expected);
+      assert.equal(result.answer,'partial');
+    } finally {await new Promise(resolve=>server.close(resolve));}
+  }
+});
+
+test('[DONE] completes the request without waiting for the HTTP connection to close', async()=>{
+  const server=http.createServer((req,res)=>{
+    req.resume();res.writeHead(200,{'Content-Type':'text/event-stream'});
+    res.write('data: {"choices":[{"delta":{"content":"ok"}}]}\n\ndata: [DONE]\n\n');
+  });
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  try {
+    const result=await runStreamingRequest(`http://127.0.0.1:${server.address().port}/v1/chat/completions`,{stream:true},AbortSignal.timeout(2000),{collectContent:true});
+    assert.equal(result.error,null);assert.equal(result.answer,'ok');
+  } finally {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
+
+test("runStreamingRequest parses LF and CRLF events across HTTP chunks", async () => {
+  for (const ending of ["\n", "\r\n"]) {
+    const deltas = [];
+    const server = http.createServer(async (req, res) => {
+      req.resume();
+      res.writeHead(200, { "Content-Type": "text/event-stream" });
+      const events = [
+        { choices: [{ delta: { content: "hello " } }] },
+        { choices: [{ delta: { content: "world" } }] },
+        { usage: { prompt_tokens: 7, completion_tokens: 5 }, choices: [] },
+      ];
+      for (const event of events) {
+        const frame = `data: ${JSON.stringify(event)}${ending}${ending}`;
+        // Split the blank-line delimiter, including between CR and LF.
+        res.write(frame.slice(0, -1));
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        res.write(frame.slice(-1));
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      res.end(`data: [DONE]${ending}${ending}`);
+    });
+    await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const result = await runStreamingRequest(
+        `http://127.0.0.1:${server.address().port}/v1/chat/completions`,
+        { stream: true }, AbortSignal.timeout(5_000),
+        { collectContent: true, onDelta: (delta) => deltas.push(delta.text) }
+      );
+      assert.equal(result.error, null);
+      assert.equal(result.completionTokens, 5, JSON.stringify(ending));
+      assert.equal(result.prefillTokens, 7);
+      assert.equal(result.content, "hello world");
+      assert.deepEqual(deltas, ["hello ", "world"]);
+      assert.ok(result.decodeTps > 0);
+    } finally {
+      server.closeAllConnections();
+      await new Promise((resolve) => server.close(resolve));
+    }
   }
 });
 

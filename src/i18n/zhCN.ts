@@ -46,7 +46,7 @@ const replacements: Array<[RegExp, string]> = [
   [/Stop all showcase streams\?/gi, "停止所有演示流？"], [/Could not copy to clipboard/gi, "无法复制到剪贴板"],
   [/Spark not found/gi, "找不到 Spark"], [/Failed to load Spark/gi, "加载 Spark 失败"],
   [/Estimated, not wall-metered/gi, "估算值，非电表实测"],
-  [/Fleet membership changed\. Restart sparkDash to establish a truthful new accounting scope\.?/gi, "集群成员已变更。请重启 sparkDash 以建立新的准确统计范围。"],
+  [/Fleet membership changed\. Restart sparkDash to establish a truthful new accounting scope\.?/gi, "集群成员已变更。请重启 SparkDash 以建立新的准确统计范围。"],
   [/Energy telemetry unavailable/gi, "能源遥测不可用"], [/Loading fleet energy…?/gi, "正在加载集群能耗…"],
   [/Partial coverage/gi, "部分节点有数据"], [/Warming up — no complete energy interval recorded yet\.?/gi, "正在预热 — 尚未记录完整的能耗区间。"],
   [/No complete coverage/gi, "无完整数据覆盖"], [/Distributed LLM worker/gi, "分布式 LLM 工作节点"],
@@ -124,5 +124,5 @@ export function translateZhCN(value: string): string {
 
 export function installZhCN(): void {
   document.documentElement.lang = "zh-CN";
-  document.title = "sparkDash AI 集群监控";
+  document.title = "SparkDash AI 集群监控";
 }

@@ -1,3 +1,4 @@
+import { displayName } from '../../displayName';
 import { useState } from "react";
 import type { SparkSnapshot } from "../../api/types";
 import { shutdownSpark, wakeSpark } from "../../api/client";
@@ -169,8 +170,8 @@ export function SparkActions({ spark, onEdit, className }: SparkActionsProps) {
         targets={[{id:spark.id,name:spark.name}]}
         onClose={() => setShutdownOpen(false)}
         onConfirm={handleShutdown}
-        title={`关闭 ${spark.name}`}
-        description={`确认关闭 ${spark.name}？需要宿主机已有的关机脚本和免密 sudo。命令回执不等于节点已离线；连接中断时执行结果未确认。`}
+        title={`关闭 ${displayName(spark.name)}`}
+        description={`确认关闭 ${displayName(spark.name)}？需要宿主机已有的关机脚本和免密 sudo。命令回执不等于节点已离线；连接中断时执行结果未确认。`}
         confirmLabel="关机"
       />
     </>

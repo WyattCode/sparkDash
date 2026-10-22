@@ -3,11 +3,10 @@ export interface VerificationRecord {
   passed?:number; total?:number; durationMs?:number;
 }
 export interface Verification {
-  checkedAt:number; supported:boolean; reason?:string|null; node?:string; port?:number; model?:string; boot?:string|null;
-  running?:boolean; storageError?:string|null;
+  checkedAt:number; supported:boolean; reason?:string; node?:string; port?:number; model?:string; boot?:string|null;
+  running?:boolean; storageError?:string|null; manualSupported?:boolean;
   auth?:{status:string;anonymous:number|null;invalid:number|null;keyed:number|null};
   inference?:VerificationRecord|null; warmup?:VerificationRecord|null; vision?:VerificationRecord|null;
-  canVerify?:boolean;
   current?:{inference:boolean;warmup:boolean;vision:boolean};
 }
 export function recordLabel(r:VerificationRecord|null|undefined,current:boolean|undefined,kind:string) {
@@ -17,7 +16,7 @@ export function recordLabel(r:VerificationRecord|null|undefined,current:boolean|
   return `${label} · ${r.status==='passed'?'通过':'未通过'}${current?'':'（历史）'}`;
 }
 export function recordNote(r:VerificationRecord|null|undefined) {
-  return r?`${r.at?new Date(r.at).toLocaleString('zh-CN'):'日期未记录'} · ${r.source} · ${r.detail}`:'尚未记录；不会将 API 可达当作验收通过';
+  return r?`${r.at?new Date(r.at).toLocaleString('zh-CN'):'日期未记录'} · ${r.source.replace(/\bsparkDash\b/g, 'SparkDash')} · ${r.detail}`:'尚未记录；不会将 API 可达当作验收通过';
 }
 export function verificationTone(r:VerificationRecord|null|undefined,current:boolean|undefined):'success'|'danger'|'neutral' {
   if(!current||!r)return 'neutral';

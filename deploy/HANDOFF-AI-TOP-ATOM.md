@@ -1,8 +1,10 @@
 # AI TOP ATOM / sparkDash 部署交接
 
-更新时间：2026-10-09 02:00（Asia/Taipei），最终图标修正后复核。工作目录 `/home/wyatt/sparkDash`。
+更新时间：2026-10-23（Asia/Taipei）。工作目录 `/home/wyatt/sparkDash`。
 
-## 当前交付状态
+**当前权威交接见 [UPGRADE-20261023.md](UPGRADE-20261023.md)。已获取 .233 最新完整源码并全量迁移界面/功能，保留 ATOM 品牌及本机配置。现在可直接从源码构建；下文关于编译产物和缺失源码的限制均为历史记录。**
+
+## 初始交付状态（历史）
 
 访问地址：http://192.168.10.124:5555/ 。已部署中文改版、双机监控、AI TOP ATOM 设备名称、青蓝主题和四台设备线框装饰。
 
@@ -13,7 +15,7 @@
 
 Worker 的模型名称由 Head 派生；不单独探测 Worker 的 8888 端口。设备配置在 `config/sparks.json`，界面设置在 `config/settings.json`。两台设备均已验证在线。
 
-## 必须理解的版本边界
+## 旧版版本边界（已由 2026-10-23 全源码迁移解决）
 
 - 仓库：`https://github.com/WyattCode/sparkDash.git`。
 - 后端和可编辑 React 源码：`feat/zh-ui-hardening-20260914`，基线提交 `6c2dbde4d824d41f25dd4b3be289a2da7b3e631a`。

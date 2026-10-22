@@ -29,7 +29,7 @@ export function MetricBar({
   caption,
   subCaption,
 }: MetricBarProps) {
-  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
+  const pct = Number.isFinite(value) && Number.isFinite(max) && max > 0 ? Math.max(0,Math.min(100, Math.round((value / max) * 100))) : 0;
   const barColor = autoBand ? bandColor(pct, color) : color;
 
   return (
@@ -38,7 +38,7 @@ export function MetricBar({
         <span className="text-xs text-muted">{label}</span>
         <span className="font-tabular text-sm text-text">{caption ?? `${pct}%`}</span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-border">
+      <div className="metric-bar-track h-1.5 overflow-hidden rounded-full bg-border">
         <div
           className={`metric-bar-fill h-full rounded-full transition-[width] duration-300 ease-out ${barColor}`}
           style={{ ["--bar-pct" as string]: `${pct}%` }}

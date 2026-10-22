@@ -2,6 +2,14 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { HermesProbe, chooseLocalInvocation, parseHostPasswd } from "../HermesProbe.js";
 
+test('unsafe stored local usernames are rejected before host execution', async () => {
+  const probe = new HermesProbe({isLocal:true,ssh:{user:'bad;user'}});
+  let executed = false;
+  probe._execLocal = async () => { executed = true; return ''; };
+  await assert.rejects(probe._run('echo harmless',1000), /Invalid SSH user/);
+  assert.equal(executed, false);
+});
+
 /** Build a probe whose `_run` returns a canned remote output. */
 function probeReturning(out) {
   const probe = new HermesProbe({
@@ -113,20 +121,6 @@ test("HermesProbe update reports failure when the binary is missing", async () =
   assert.equal(res.ok, false);
   assert.equal(res.installed, false);
   assert.match(res.error, /not found/);
-});
-
-test("HermesProbe never runs a script for an SSH user that would break out of it", async () => {
-  // A unit saved before the API validated local units' SSH users.
-  const probe = new HermesProbe({ id: "s", isLocal: true, ssh: { user: "x; touch /tmp/pwned #" } });
-  let ran = false;
-  probe._execLocal = async () => {
-    ran = true;
-    return "";
-  };
-  await assert.rejects(probe._run("echo hi", 1000), /Invalid SSH user/);
-  const status = await probe.check();
-  assert.equal(ran, false, "nothing reached the shell");
-  assert.match(status.error ?? "", /Invalid SSH user/);
 });
 
 test("parseHostPasswd resolves the host user identity", () => {

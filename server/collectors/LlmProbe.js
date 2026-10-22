@@ -14,6 +14,9 @@ const REDETECT_INTERVAL_MS = 60_000;
 /** Current SGLang names first. Deprecated aliases still work but log a warning per hit. */
 const SGLANG_SERVER_INFO_PATHS = ["/server_info", "/get_server_info"];
 const SGLANG_MODEL_INFO_PATHS = ["/model_info", "/get_model_info"];
+// Optional server-info must not hold up live Prometheus metrics for seconds.
+const SGLANG_INFO_TIMEOUT_MS = 400;
+const SGLANG_INFO_RETRY_MS = 30_000;
 /**
  * SGLang's last_gen_throughput is a sticky gauge (holds last decode rate when
  * idle). Only treat it as live after we observe a change between polls, and
@@ -75,6 +78,7 @@ export class LlmProbe {
     this.modelId = null;
     this.modelPath = null;
     this.contextLength = null;
+    this.parallelism = null;
     this.gpuMemoryUtilization = null;
     this.slotsActive = 0;
     this.slotsTotal = 0;
@@ -89,9 +93,8 @@ export class LlmProbe {
     // Per-slot rate tracking (for llama.cpp native path)
     this.slotState = new Map();
     this.lastTokenCounts = { input: 0, output: 0 };
-    this._nativeCachedPromptTokens = null;
     this._nativeCounterReady = false;
-    this._nativeQueueFromHealth = false;
+    this._nativeCachedPromptTokens = null;
     /** Previous prefill counters by kind; null until first labeled sample. */
     this.lastPrefillKinds = null;
     /** Previous vLLM TTFT histogram `_sum` (seconds). null until first sample. */
@@ -108,6 +111,9 @@ export class LlmProbe {
     // vLLM inference metrics from /metrics (null when not vLLM / missing series)
     // Metric names follow stock vLLM Prometheus exposition (versions may differ).
     this.kvCacheUsage = null; // 0–1 fraction
+    this.kvCacheGb = null;
+    this.weightsGb = null;
+    this.tokenCounters = null;
     this.requestsRunning = null;
     this.requestsWaiting = null;
     this.ttftP95Seconds = null;
@@ -127,6 +133,7 @@ export class LlmProbe {
     this._lastDetectAt = 0;
     /** @type {{ value: number, liveUntil: number } | null} */
     this._sglangStickyTps = null;
+    this._sglangLoadGenTps = null;
     /** Whether this poll's /server_info carried total_input/output_tokens. */
     this._sglangTotalsPolled = false;
     /**
@@ -212,6 +219,11 @@ export class LlmProbe {
 
   /** Probe the LLM server and return a snapshot. */
   async probe() {
+    // These fields describe this collection, never a cached prior response.
+    this.tokenCounters = null;
+    this.kvCacheGb = null;
+    this.weightsGb = null;
+    this.kvCacheUsage = null;
     try {
       const shouldDetect =
         this.serverIsOpenAI === null ||
@@ -255,6 +267,12 @@ export class LlmProbe {
 
   _resetDetection() {
     this.lastProbeTime = 0;
+    this.parallelism = null;
+    this.tokenCounters = null;
+    this.kvCacheGb = null;
+    this.weightsGb = null;
+    this._sglangLoadGenTps = null;
+    this._sglangInfoRetryAt = 0;
     this.serverIsOpenAI = null;
     this.backendType = null;
     this.authOpen = null;
@@ -281,9 +299,11 @@ export class LlmProbe {
     this.mtpAcceptanceRate = null;
     this.slotState.clear();
     this.lastTokenCounts = { input: 0, output: 0 };
-    this._nativeCachedPromptTokens = null;
     this._nativeCounterReady = false;
-    this._nativeQueueFromHealth = false;
+    this._nativeCachedPromptTokens = null;
+    // Upstream 8d498be: the first successful poll after a reset only seeds
+    // lifetime counters; it must not become a one-interval throughput spike.
+    this.lastProbeTime = 0;
     this.lastPrefillKinds = null;
     this.lastTtftSum = null;
     this.lastTtftCount = null;
@@ -369,13 +389,13 @@ export class LlmProbe {
   /**
    * Classify an OpenAI-compatible server: ds4, SGLang, EXL3, q27, or vLLM (default).
    * @param {unknown} ownedBy
-   * @returns {Promise<"ds4" | "sglang" | "exl3" | "tensorfold" | "q27" | "vllm">}
+   * @returns {Promise<"ds4" | "sglang" | "exl3" | "q27" | "vllm">}
    */
   async _classifyOpenAIBackend(ownedBy) {
     if (typeof ownedBy === "string") {
+      if (/tensorfold/i.test(ownedBy)) return "tensorfold";
       if (/ds4/i.test(ownedBy)) return "ds4";
       if (/sglang/i.test(ownedBy)) return "sglang";
-      if (/tensorfold/i.test(ownedBy)) return "tensorfold";
       if (/exl3/i.test(ownedBy)) return "exl3";
       // q27's /v1/models reports owned_by: "q27" (signalnine/q27 engine).
       if (/q27/i.test(ownedBy)) return "q27";
@@ -405,6 +425,7 @@ export class LlmProbe {
   /** @param {unknown} data */
   static _healthLooksLikeExl3(data) {
     if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+    if (data.backend === "tensorfold") return false;
     if (data.backend === "exl3") return true;
     // tools/serve_openai.py: { ok, busy } even before token counters existed.
     return data.ok === true && typeof data.busy === "boolean";
@@ -415,10 +436,10 @@ export class LlmProbe {
    * @param {string[]} paths
    * @returns {Promise<object|null>}
    */
-  async _fetchSglangJson(paths) {
+  async _fetchSglangJson(paths, timeoutMs = LLM_PROBE_TIMEOUT_MS) {
     for (const path of paths) {
       try {
-        const res = await this._fetch(`${this.baseUrl}${path}`);
+        const res = await this._fetch(`${this.baseUrl}${path}`, timeoutMs);
         if (!res.ok) continue;
         const data = await res.json().catch(() => null);
         if (data && typeof data === "object" && !Array.isArray(data)) return data;
@@ -432,6 +453,15 @@ export class LlmProbe {
   /** True when SGLang native server-info endpoints respond. */
   async _probeIsSglang() {
     return (await this._fetchSglangJson(SGLANG_SERVER_INFO_PATHS)) != null;
+  }
+
+  async _liveSglangInfo() {
+    if (Date.now() < (this._sglangInfoRetryAt || 0)) return null;
+    const data = await this._fetchSglangJson(
+      SGLANG_SERVER_INFO_PATHS, Math.min(LLM_PROBE_TIMEOUT_MS, SGLANG_INFO_TIMEOUT_MS),
+    );
+    this._sglangInfoRetryAt = data ? 0 : Date.now() + SGLANG_INFO_RETRY_MS;
+    return data;
   }
 
   /** True when Prometheus /metrics exposes ds4-server series (ds4-on-spark). */
@@ -477,11 +507,10 @@ export class LlmProbe {
     this.lastProbeTime = now;
 
     // Model info from /v1/models — 401/403 means protected; other failure = down
-    let modelsOk = false;
-    let modelContextLength = null;
+let modelsOk = false;
     let owned = null;
     let servedModelId = null;
-    const previousModelId = this.modelId;
+    let modelsDataContext = null;
     try {
       const modelsRes = await this._fetch(`${this.baseUrl}/v1/models`);
       const auth = this._noteAuthStatus(modelsRes.status);
@@ -497,10 +526,11 @@ export class LlmProbe {
         // Drop HF hub cache paths from modelPath if /v1/models id was a cache dir
         if (isHfHubCachePath(model?.id)) this.modelPath = null;
         // ds4-server uses context_length; vLLM uses max_model_len
-        const modelContext = model?.max_model_len ?? model?.context_length;
-        modelContextLength = Number.isSafeInteger(modelContext) && modelContext > 0 ? modelContext : null;
-        this.contextLength = modelContextLength ?? this.contextLength;
+        this.contextLength =
+          model?.max_model_len ?? model?.context_length ?? this.contextLength;
         owned = model?.owned_by;
+        const ctx = model?.max_model_len ?? model?.context_length;
+        modelsDataContext = Number.isSafeInteger(ctx) && ctx > 0 ? ctx : null;
       }
     } catch {}
 
@@ -510,101 +540,48 @@ export class LlmProbe {
 
     // Self-heal backend from owned_by before branching (cheap, no extra HTTP)
     if (typeof owned === "string") {
-      if (/ds4/i.test(owned)) this.backendType = "ds4";
+      if (/tensorfold/i.test(owned)) this.backendType = "tensorfold";
+      else if (/ds4/i.test(owned)) this.backendType = "ds4";
       else if (/sglang/i.test(owned) && this.backendType !== "ds4") {
         this.backendType = "sglang";
-      } else if (/tensorfold/i.test(owned) && this.backendType !== "ds4") {
-        this.backendType = "tensorfold";
       } else if (/exl3/i.test(owned) && this.backendType !== "ds4") {
         this.backendType = "exl3";
       }
     }
 
-    const nativeModelChanged = this.backendType === "tensorfold" && previousModelId != null && previousModelId !== this.modelId;
-    if (nativeModelChanged) {
-      this.contextLength = modelContextLength;
-      this.generationTps = null;
-      this.prefillTps = null;
+    if (this.backendType === "tensorfold") {
+      await this._probeNativeTensorFold(dtSec, modelsDataContext);
+      return this._getSnapshot();
     }
 
-    this._nativeQueueFromHealth = false;
-
     // EXL3 serve_openai.py: live tok/s from /health cumulative counters (no Prometheus).
-    if (this.backendType === "exl3" || this.backendType === "tensorfold" || this.backendType == null) {
+    if (this.backendType === "exl3" || this.backendType == null) {
       try {
         const healthRes = await this._fetch(`${this.baseUrl}/health`);
         if (healthRes.ok) {
           const health = await healthRes.json().catch(() => null);
-          if (this.backendType === "tensorfold" && health?.status === "ok") {
-            // Live-rate samples do not advance the legacy cumulative-counter baseline.
-            this._nativeCounterReady = false;
-            // This backend does not expose context in health; never retain an old model's capacity.
-            this.contextLength = modelContextLength;
-            const live = health.live ?? {};
-            const count = value => Number.isInteger(value) && value >= 0 ? value : null;
-            const connections = count(live.connections);
-            const waiting = count(live.waiting);
-            this._applyExl3Health({busy: connections > 0, streams: {max: health.max_batch_size}}, dtSec);
-            this.requestsWaiting = waiting;
-            this._nativeQueueFromHealth = waiting != null;
-            this.requestsRunning = connections == null || waiting == null || waiting > connections ? null : connections - waiting;
-            this.slotsActive = this.requestsRunning ?? 0;
-            this.slotsTotal = Number.isInteger(health.max_batch_size) && health.max_batch_size > 0 ? health.max_batch_size : null;
-            const rate = value => Number.isFinite(value) && value >= 0 ? value : null;
-            this.generationTps = connections === 0 ? 0 : rate(live.decode_tokens_per_second);
-            this.prefillTps = connections === 0 ? 0 : rate(live.prefill_tokens_per_second);
-            this.totalOutputTokens = null; // Zig /health exposes rates, not lifetime counters.
-            try {
-              const res = await this._fetch(`${this.baseUrl}/metrics`);
-              if (res.ok) {
-                const m = parseTensorfoldMetrics(await res.text());
-                this.totalOutputTokens = m.completionTotal;
-                if (m.running != null) this.requestsRunning = m.running;
-                if (this.requestsWaiting == null && m.waiting != null) this.requestsWaiting = m.waiting;
-                this.slotsActive = this.requestsRunning ?? 0;
-                this.ttftP95Seconds = m.ttft; this.e2eP95Seconds = m.e2e;
-                this.prefixCacheHitRate = m.cache; this.mtpAcceptanceRate = m.mtp;
-                this.preemptionsTotal = m.preemptions;
-                this.kvCacheUsage = m.kv;
-              }
-            } catch { /* Optional metrics must not hide the healthy model. */ }
-            return this._getSnapshot();
-          }
           if (LlmProbe._healthLooksLikeExl3(health)) {
-            this.backendType = health.backend === "tensorfold" ? "tensorfold" : "exl3";
-            this._applyExl3Health(health, nativeModelChanged ? 0 : dtSec);
-            if (this.backendType === "tensorfold") {
-              try {
-                const res = await this._fetch(`${this.baseUrl}/metrics`);
-                if (res.ok) {
-                  const m = parseTensorfoldMetrics(await res.text());
-                  this.requestsRunning = m.running ?? this.requestsRunning; this.requestsWaiting = m.waiting;
-                  this.slotsActive = this.requestsRunning;
-                  this.ttftP95Seconds = m.ttft; this.e2eP95Seconds = m.e2e;
-                  this.prefixCacheHitRate = m.cache; this.mtpAcceptanceRate = m.mtp;
-                  this.kvCacheUsage = m.kv;
-                }
-              } catch { /* Optional metrics must not hide the healthy model. */ }
-            }
+            this.backendType = "exl3";
+            this._applyExl3Health(health, dtSec);
             return this._getSnapshot();
           }
         }
       } catch {
         /* health optional unless already classified exl3 */
       }
-      if (this.backendType === "tensorfold") this._nativeCounterReady = false;
-      if (this.backendType === "exl3" || this.backendType === "tensorfold") return this._getSnapshot();
+      if (this.backendType === "exl3") return this._getSnapshot();
     }
 
     // SGLang: native info endpoints. Skip on known vLLM/ds4 to avoid 404 spam.
     // Prefer /server_info — /get_server_info is a deprecated alias that logs every poll.
     if (this.backendType === "sglang" || this.backendType == null) {
       this._sglangTotalsPolled = false;
-      const sgData = await this._fetchSglangJson(SGLANG_SERVER_INFO_PATHS);
+      const sgData = await this._liveSglangInfo();
+      // Live running/queued requests must not depend on optional server-info.
+      if (sgData || this.backendType === "sglang") await this._probeSglangLoad();
       if (sgData) {
         this.backendType = "sglang";
         // Load before last_gen_throughput so inflight can keep a steady rate live.
-        await this._probeSglangLoad();
         this._applySglangServerInfo(sgData, dtSec);
         // Engine tile: Active vs Sleeping. SGLang has no live sleep gauge
         // (sleep_on_idle is a launch flag, not current state). A reachable
@@ -625,6 +602,7 @@ export class LlmProbe {
           const txt = await metricsRes.text();
           if (this._sglangTotalsPolled) this._applySglangPrefillSplit(txt, dtSec);
           else this._applySglangMetrics(txt, dtSec);
+          this._applySglangAccounting(txt, servedModelId || this.modelId);
         }
       } catch {
         /* metrics optional */
@@ -641,7 +619,10 @@ export class LlmProbe {
       const metricsRes = await this._fetch(`${this.baseUrl}/metrics`);
       if (metricsRes.ok) {
         const txt = await metricsRes.text();
-        if (
+        if (txt.includes("tensorfold:")) {
+          this.backendType = "tensorfold";
+          this._applyTensorFoldMetrics(txt, dtSec);
+        } else if (
           this.backendType === "ds4" ||
           LlmProbe._metricsLookLikeDs4(txt)
         ) {
@@ -873,6 +854,56 @@ export class LlmProbe {
    * @param {Record<string, unknown>} data
    * @param {number} dtSec
    */
+  async _probeNativeTensorFold(dtSec, modelsContext) {
+    for (const key of ['generationTps','prefillTps','requestsRunning','requestsWaiting','slotsTotal',
+      'totalOutputTokens','kvCacheUsage','ttftP95Seconds','e2eP95Seconds','itlP95Seconds',
+      'prefixCacheHitRate','mtpAcceptanceRate','preemptionsTotal','tokenCounters','weightsGb','kvCacheGb']) this[key] = null;
+    this.contextLength = modelsContext;
+    this.parallelism = null;
+    this.slotsActive = 0;
+    let health = null;
+    try {
+      const res = await this._fetch(`${this.baseUrl}/health`);
+      if (res.ok) health = await res.json();
+    } catch { /* Optional health must not relabel a known native engine. */ }
+    const valid = v => typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : null;
+    const count = v => Number.isSafeInteger(v) && v >= 0 ? v : null;
+    const live = health?.status === 'ok' && health.live && typeof health.live === 'object' ? health.live : null;
+    if (live) {
+      this._nativeCounterReady = false;
+      const connections = count(live.connections), waiting = count(live.waiting);
+      this.requestsRunning = connections != null && waiting != null && waiting <= connections ? connections-waiting : null;
+      this.requestsWaiting = waiting;
+      this.generationTps = connections === 0 ? 0 : valid(live.decode_tokens_per_second);
+      this.prefillTps = connections === 0 ? 0 : valid(live.prefill_tokens_per_second);
+    } else if (health?.ok === true && health.backend === 'tensorfold') {
+      if (this._nativeModelId !== this.modelId) this._nativeCounterReady = false;
+      this._applyExl3Health(health,dtSec);
+    } else this._nativeCounterReady = false;
+    this._nativeModelId = this.modelId;
+    const capacity = count(health?.max_batch_size) ?? count(health?.streams?.max);
+    this.slotsTotal = capacity > 0 ? capacity : null;
+    const ctx = count(health?.context_length);
+    this.contextLength = modelsContext ?? (ctx > 0 ? ctx : null);
+    this._nativeQueueFromHealth = live != null && this.requestsWaiting != null;
+    let metrics = null;
+    try {const res=await this._fetch(`${this.baseUrl}/metrics`);if(res.ok)metrics=parseTensorfoldMetrics(await res.text());} catch { /* optional */ }
+    const input = metrics?.cacheQueries ?? valid(health?.prompt_tokens_total);
+    const output = metrics?.completionTotal ?? valid(health?.completion_tokens_total);
+    const cached = metrics?.cacheHits ?? valid(health?.cached_tokens_total);
+    this.totalOutputTokens = output;
+    if (metrics) {
+      this.requestsRunning = metrics.running ?? this.requestsRunning;
+      this.requestsWaiting = this.requestsWaiting ?? metrics.waiting;
+      this.ttftP95Seconds=metrics.ttft;this.e2eP95Seconds=metrics.e2e;
+      this.kvCacheUsage=metrics.kv;this.prefixCacheHitRate=metrics.cache;
+      this.mtpAcceptanceRate=metrics.mtp;this.preemptionsTotal=metrics.preemptions;
+    }
+    this.slotsActive=this.requestsRunning ?? 0;
+    // Native input already contains cached tokens; keep cache separate, do not add it twice.
+    this.tokenCounters = input != null && output != null ? {prompt:input,output,cached:cached!=null&&cached<=input?cached:null,source:'tensorfold:metrics'} : null;
+  }
+
   _applyExl3Health(data, dtSec) {
     const native = data?.backend === 'tensorfold';
     const counter = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : NaN;
@@ -945,10 +976,49 @@ export class LlmProbe {
   }
 
   /**
-   * Apply stock vLLM Prometheus /metrics (tok/s + inference tiles).
+   * Map TensorFold native metrics to common inference fields.
    * @param {string} txt
    * @param {number} dtSec
    */
+  _applyTensorFoldMetrics(txt, dtSec) {
+    const get = name => {
+      const m = txt.match(new RegExp('^' + name + ' ([0-9.eE+\\-]+)$', 'm'));
+      const value = m ? Number(m[1]) : null;
+      return value != null && Number.isFinite(value) && value >= 0 ? value : null;
+    };
+    const output = get('tensorfold_health:completion_tokens_total');
+    const input = get('tensorfold:prompt_tokens_total');
+    if(output == null || input == null) throw new Error('TensorFold token counters unavailable');
+    this.generationTps=0;
+    this.prefillTps=0;
+    let mapped = txt.replace(/tensorfold:requests_running/g,'vllm:num_requests_running')
+      .replace(/tensorfold:requests_waiting/g,'vllm:num_requests_waiting')
+      .replace(/tensorfold:request_latency_seconds/g,'vllm:e2e_request_latency_seconds')
+      .replace(/tensorfold:mtp_accepted_total/g,'vllm:spec_decode_num_accepted_tokens_total')
+      .replace(/tensorfold:mtp_drafted_total/g,'vllm:spec_decode_num_draft_tokens_total')
+      .replace(/tensorfold:/g,'vllm:');
+    // The live health counter is sufficient; do not require the separate
+    // completed-request generation counter merely to replace its text line.
+    mapped = mapped.replace(/^vllm:generation_tokens_total(?:\{[^}]*\})?\s+[^\r\n]+/gm,'') + '\nvllm:generation_tokens_total ' + output + '\n';
+    if (this._tensorfoldModel !== this.modelId || (output != null && output < this.lastTokenCounts.output) || (input != null && input < this.lastTokenCounts.input)) {
+      this.lastTokenCounts = {input: input ?? 0, output: output ?? 0};
+      this.lastTtftSum = null;this.lastTtftCount = null;dtSec=0;
+    }
+    this._tensorfoldModel=this.modelId;
+    const previousInput=this.lastTokenCounts.input;
+    this._applyVllmMetrics(mapped, dtSec);
+    // Native prompt counters advance at request completion. This is observed
+    // input accounting rate, NOT a GPU prefill speed inferred from TTFT.
+    this.prefillTps=input != null && dtSec > 0 && dtSec < 10 ? Math.max(0,(input-previousInput)/dtSec) : 0;
+    if (dtSec === 0) {this.generationTps=0;this.prefillTps=0;}
+    this.contextLength=get('tensorfold_health:context_length');
+    this.slotsTotal=get('tensorfold_health:streams_max') ?? 0;
+    const pool=get('tensorfold_health:pool_tokens'), free=get('tensorfold_health:pool_free_tokens');
+    this.kvCacheUsage=pool > 0 && free != null && free <= pool ? (pool-free)/pool : null;
+    this.tokenCounters=output == null ? null : {source:'tensorfold:health+prometheus',output,prompt:input,cached:get('tensorfold_health:cached_tokens_total')};
+    this.gpuMemoryUtilization=null;
+  }
+
   _applyVllmMetrics(txt, dtSec) {
     const promptTokens = this._getVllmMetric(txt, "prompt_tokens_total");
     const genTokens = this._getVllmMetric(txt, "generation_tokens_total");
@@ -1054,6 +1124,24 @@ export class LlmProbe {
    * @param {number} dtSec
    */
   _applySglangServerInfo(sgData, dtSec) {
+    // Display-only facts from the existing server-info read; never infer TP
+    // from node count and never modify engine configuration.
+    const args = sgData?.server_args ?? sgData;
+    const size = value => Number.isSafeInteger(value) && value > 0 ? value : null;
+    const tensor = size(args?.tp_size), expert = size(args?.ep_size);
+    this.parallelism = tensor != null || expert != null ? {tensor, expert} : null;
+    const states = Array.isArray(sgData?.internal_states) ? sgData.internal_states : [];
+    const mem = states.find(s => s?.memory_usage)?.memory_usage;
+    this.weightsGb = LlmProbe._positiveNumber(mem?.weight);
+    this.kvCacheGb = LlmProbe._positiveNumber(mem?.kvcache);
+    if (Number.isSafeInteger(sgData.total_output_tokens) && sgData.total_output_tokens >= 0) {
+      this.tokenCounters = {
+        output: sgData.total_output_tokens,
+        prompt: LlmProbe._tokenCount(sgData.total_input_tokens),
+        cached: LlmProbe._tokenCount(sgData.total_cached_tokens),
+        source: 'sglang:server_info',
+      };
+    }
     // Prefer true max context (context_length / max_total_tokens). Do NOT use
     // max_total_num_tokens — that is the KV-cache pool budget across concurrent
     // sequences and is often ~2× the configured context (showed 2.1M for a 1M run).
@@ -1108,6 +1196,56 @@ export class LlmProbe {
     this.generationTps = this._sglangStickyThroughput(lastGen, this._sglangInflight());
   }
 
+  static _tokenCount(value) {
+    return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0 ? value : null;
+  }
+
+  /** Sum independent series, but collapse replicated TP/PP/EP rank samples.
+   * Keep labels such as is_streaming and dp_rank: those are distinct traffic.
+   */
+  _sglangCounter(txt, name, mode, modelId = this.modelId) {
+    const groups = new Map();
+    for (const line of txt.split('\n')) {
+      const m = /^([^ {]+)(?:\{([^}]*)\})?\s+([\d.eE+-]+)\s*$/.exec(line);
+      if (!m || ![`sglang:${name}`, `sglang_${name}`].includes(m[1])) continue;
+      const labels = [...(m[2] || '').matchAll(/([\w]+)="((?:\\.|[^"\\])*)"/g)];
+      if (mode != null && !labels.some(x => x[1] === 'mode' && x[2] === mode)) continue;
+      const model = labels.find(x => x[1] === 'model_name')?.[2];
+      if (model && modelId && model !== modelId) continue;
+      const value = LlmProbe._tokenCount(Number(m[3]));
+      if (value == null) continue;
+      const key = JSON.stringify(labels.filter(x => !['tp_rank','pp_rank','moe_ep_rank'].includes(x[1]))
+        .map(x => [x[1],x[2]]).sort((a,b) => a[0].localeCompare(b[0])));
+      groups.set(key, Math.max(groups.get(key) ?? 0, value));
+    }
+    const total = [...groups.values()].reduce((a,b) => a+b,0);
+    return groups.size ? LlmProbe._tokenCount(total) : null;
+  }
+
+  _applySglangAccounting(txt, modelId = this.modelId) {
+    const counter = (name, mode) => this._sglangCounter(txt, name, mode, modelId);
+    const gauge = name => this._getPromMetricMax(txt, `sglang:${name}`) ?? this._getPromMetricMax(txt, `sglang_${name}`);
+    let usage = gauge('token_usage');
+    if (usage == null) {
+      const used = gauge('kv_used_tokens'), total = gauge('max_total_num_tokens');
+      if (used != null && total > 0) usage = used / total;
+    }
+    this.kvCacheUsage = Number.isFinite(usage) && usage >= 0 && usage <= 1 ? usage : null;
+    this.kvCacheGb ??= LlmProbe._positiveNumber(gauge('kv_cache_memory_usage_gb'));
+    const output = counter('generation_tokens_total');
+    if (output == null) return;
+    const computed = counter('prefill_effective_tokens_total', 'input');
+    const hits = ['device_hit','host_hit','storage_hit'].map(mode => counter('prefill_effective_tokens_total', mode));
+    const cached = hits.some(n => n != null) ? hits.reduce((sum,n) => sum+(n ?? 0),0) : null;
+    const effective = computed != null && cached != null;
+    this.tokenCounters = {
+      output,
+      prompt: effective ? LlmProbe._tokenCount(computed+cached) : counter('prompt_tokens_total'),
+      cached: effective ? cached : null,
+      source: effective ? 'sglang:prometheus:effective' : 'sglang:prometheus:prompt',
+    };
+  }
+
   /** True when SGLang load probe reported running or waiting requests. */
   _sglangInflight() {
     return (
@@ -1122,6 +1260,7 @@ export class LlmProbe {
    * num_reqs is running + waiting.
    */
   async _probeSglangLoad() {
+    this._sglangLoadGenTps = null;
     for (const path of ["/v1/loads", "/get_load"]) {
       try {
         const res = await this._fetch(`${this.baseUrl}${path}`);
@@ -1145,7 +1284,10 @@ export class LlmProbe {
     let running = 0;
     let waiting = 0;
     let saw = false;
+    let loadGen = null;
     for (const row of rows) {
+      const gen = row.gen_throughput == null ? NaN : Number(row.gen_throughput);
+      if (Number.isFinite(gen) && gen >= 0) loadGen = loadGen == null ? gen : Math.max(loadGen, gen);
       const wait = Number(row.num_waiting_reqs);
       const runDirect = Number(row.num_running_reqs);
       const total = Number(row.num_reqs);
@@ -1163,6 +1305,7 @@ export class LlmProbe {
       }
     }
     if (!saw) return false;
+    this._sglangLoadGenTps = loadGen;
     this.requestsRunning = running;
     this.requestsWaiting = waiting;
     this.slotsActive = Math.round(running);
@@ -1264,23 +1407,34 @@ export class LlmProbe {
     return best;
   }
 
-  /**
-   * Apply SGLang Prometheus /metrics (--enable-metrics).
-   * Supports both `sglang:` and `sglang_` prefixes.
-   * @param {string} txt
-   * @param {number} dtSec
-   */
+  /** Current decode gauge; TP ranks repeat it, so take max, not sum. */
+  _sglangGenGauge(txt) {
+    // TP ranks repeat this gauge: do not sum the same throughput per rank.
+    const value = this._getPromMetricMax(txt, "sglang:gen_throughput") ??
+      this._getPromMetricMax(txt, "sglang_gen_throughput") ?? this._sglangLoadGenTps;
+    return Number.isFinite(value) && value >= 0 ? value : null;
+  }
+
+  _applySglangLiveGauge(txt) {
+    const running = this._getPromMetric(txt, "sglang:num_running_reqs") ??
+      this._getPromMetric(txt, "sglang_num_running_reqs");
+    if (running != null) {
+      this.requestsRunning = running;
+      this.slotsActive = Math.round(running);
+    }
+    const gauge = this._sglangGenGauge(txt);
+    // Gauges are current samples, independent of cumulative-counter baselines.
+    if (gauge != null) this.generationTps = this._sglangInflight()
+      ? Math.round(gauge * 100) / 100 : 0;
+    return gauge;
+  }
+
   _applySglangMetrics(txt, dtSec) {
+    const gauge = this._applySglangLiveGauge(txt);
     const gen =
       this._getPromMetric(txt, "sglang:generation_tokens_total") ??
       this._getPromMetric(txt, "sglang_generation_tokens_total");
     if (gen == null) {
-      const gauge =
-        this._getPromMetric(txt, "sglang:gen_throughput") ??
-        this._getPromMetric(txt, "sglang_gen_throughput");
-      if (gauge != null) {
-        this.generationTps = Math.max(0, Math.round(gauge * 100) / 100);
-      }
       return;
     }
 
@@ -1306,7 +1460,7 @@ export class LlmProbe {
     const inputOwned = ownsBaseline && inputMode != null && this._sglangInputMode === inputMode;
     if (ownsBaseline && dtSec > 0 && dtSec < 10) {
       const deltaOut = gen - this.lastTokenCounts.output;
-      this.generationTps = Math.max(0, Math.round((deltaOut / dtSec) * 100) / 100);
+      if (gauge == null) this.generationTps = Math.max(0, Math.round((deltaOut / dtSec) * 100) / 100);
       if (inputOwned && inputMode === "effective") {
         // Input throughput = tokens actually computed on GPU. Cache hits are
         // reported separately via cachedPrefillTps / prefixCacheHitRate.
@@ -1328,14 +1482,6 @@ export class LlmProbe {
     this._sglangInputMode = inputMode;
     this._sglangTokenSource = "prometheus";
     this.totalOutputTokens = gen;
-
-    const running =
-      this._getPromMetric(txt, "sglang:num_running_reqs") ??
-      this._getPromMetric(txt, "sglang_num_running_reqs");
-    if (running != null) {
-      this.requestsRunning = running;
-      this.slotsActive = Math.round(running);
-    }
 
     if (effective != null) {
       this._setPrefillSplitRates(effective.cached, effective.computed, dtSec, "effective");
@@ -1371,7 +1517,7 @@ export class LlmProbe {
   }
 
   /**
-   * Cache split only — never recomputes generation/prefill from raw deltas and
+   * Cache split plus live decode gauge — never computes rates from raw deltas and
    * never writes `lastTokenCounts` (server_info owns that baseline on the polls
    * where this path is selected, so touching it would mix two counter series).
    * `_setPrefillSplitRates` keeps its own baseline, so no spike can occur.
@@ -1379,6 +1525,9 @@ export class LlmProbe {
    * (see #99). Prefers cache_source="device" so HiCache L1/L2/L3 are not summed.
    */
   _applySglangPrefillSplit(txt, dtSec) {
+    // server_info owns token baselines, but its counters may only advance at
+    // completion. The live gauge is safe to apply without touching baselines.
+    this._applySglangLiveGauge(txt);
     const effective = this._sglangEffectivePrefill(txt);
     if (effective != null) {
       this._setPrefillSplitRates(effective.cached, effective.computed, dtSec, "effective");
@@ -1490,8 +1639,10 @@ export class LlmProbe {
             const dPrompted = prompted - lastState.prompted;
             this.slotState.set(slotId, { decoded, prompted });
             if (dtSec > 0 && dtSec < 10) {
-              totalGen += dDecoded / dtSec;
-              totalPrefill += dPrompted / dtSec;
+              // Upstream ffe7964: a resetting slot cannot cancel another
+              // slot's real work in the same interval.
+              totalGen += Math.max(0, dDecoded) / dtSec;
+              totalPrefill += Math.max(0, dPrompted) / dtSec;
             }
           }
 
@@ -1761,6 +1912,7 @@ export class LlmProbe {
       modelId: this.modelId || null,
       modelPath: this.modelPath || null,
       contextLength: this.contextLength,
+      parallelism: metricsLive ? this.parallelism : null,
       gpuMemoryUtilization: this.gpuMemoryUtilization,
       slotsActive: this.slotsActive,
       slotsTotal: this.slotsTotal,
@@ -1769,10 +1921,13 @@ export class LlmProbe {
       cachedPrefillTps: this.cachedPrefillTps,
       uncachedPrefillTps: this.uncachedPrefillTps,
       totalOutputTokens: this.totalOutputTokens,
+      tokenCounters: metricsLive ? this.tokenCounters : null,
+      kvCacheGb: metricsLive ? this.kvCacheGb : null,
+      weightsGb: metricsLive ? this.weightsGb : null,
       kvCacheUsage: this.kvCacheUsage,
       requestsRunning: this.requestsRunning,
       requestsWaiting: this.requestsWaiting,
-      requestsWaitingFromHealth: this._nativeQueueFromHealth,
+      requestsWaitingFromHealth: this._nativeQueueFromHealth === true,
       ttftP95Seconds: this.ttftP95Seconds,
       ttftSeconds: this.ttftSeconds,
       preemptionsTotal: this.preemptionsTotal,
@@ -1792,6 +1947,7 @@ export class LlmProbe {
       modelId: null,
       modelPath: null,
       contextLength: null,
+      parallelism: null,
       gpuMemoryUtilization: null,
       slotsActive: 0,
       slotsTotal: 0,
@@ -1824,10 +1980,10 @@ export class LlmProbe {
     return key || null;
   }
 
-  async _fetch(url) {
+  async _fetch(url, timeoutMs = LLM_PROBE_TIMEOUT_MS) {
     const headers = {};
     const apiKey = this._apiKey();
     if (apiKey) headers.Authorization = `Bearer ${apiKey}`;
-    return fetch(url, { signal: AbortSignal.timeout(LLM_PROBE_TIMEOUT_MS), headers });
+    return fetch(url, { signal: AbortSignal.timeout(timeoutMs), headers });
   }
 }

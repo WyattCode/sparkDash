@@ -1,4 +1,5 @@
-/* Product semantics: gold = interaction, blue/purple = data, green/orange/red = status.
+/* Base product semantics, refined by dgx.css/product.css: warm gold for
+   interaction/data, green/orange/red for status.
    Final shared theme layer. Keep component-specific layout in its own stylesheet. */
 :root, [data-theme="light"], [data-theme="white"] {
   --color-accent: #895500;

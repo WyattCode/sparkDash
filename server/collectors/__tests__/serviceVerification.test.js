@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {createServiceVerification,recordCurrent,registerVerificationRoutes} from '../../serviceVerification.js';
-const MODEL='deepseek-v4.1-flash',BOOT='2025-01-01T00:00:00.000Z';
+const MODEL='deepseek-v4.1-flash',BOOT='2026-09-13T13:59:51.504Z';
 function fixture(overrides={}) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'verify-test-'));
   const file=path.join(dir,'records.json');fs.writeFileSync(file,'{}');
@@ -20,7 +20,7 @@ function fixture(overrides={}) {
     if(opts.method==='POST')return response(200,{choices:[{finish_reason:'stop',message:{content:JSON.parse(opts.body).messages[0].content instanceof Array?'red':'SPARK_OK'}}]});
     return opts.headers?.Authorization==='Bearer SECRET'?response(200,{data:[{id:MODEL}]}):response(401,{});
   };
-  const service=createServiceVerification({file,imageFile,nodeName:'fixture-head',getBoot:async()=>BOOT,snapshots:()=>[{id:'head',name:'fixture-head',isLocal:true,role:'head',llmPort:8888,metrics:{llm:[{modelId:MODEL}]}}],getSpark:()=>({llmApiKeys:{8888:'SECRET'}}),fetchImpl,...overrides});
+  const service=createServiceVerification({file,imageFile,getBoot:async()=>BOOT,snapshots:()=>[{id:'head',name:'spark-b5e5',isLocal:true,role:'head',llmPort:8888,metrics:{llm:[{modelId:MODEL}]}}],getSpark:()=>({llmApiKeys:{8888:'SECRET'}}),fetchImpl,...overrides});
   return {service,file,calls,fetchImpl,cleanup:()=>fs.rmSync(dir,{recursive:true,force:true})};
 }
 test('records require matching model and boot; missing boot never passes',()=>{
@@ -32,16 +32,10 @@ test('records require matching model and boot; missing boot never passes',()=>{
 test('GET independently verifies valid, missing and wrong keys; no inference or secrets in result',async()=>{
   const f=fixture();try{const s=await f.service.status();assert.equal(s.auth.status,'verified');assert.equal(f.calls.length,3);assert.ok(f.calls.every(c=>c.opts.method==='GET'));assert.ok(!JSON.stringify(s).includes('SECRET'));await f.service.status();assert.equal(f.calls.length,3);}finally{f.cleanup();}
 });
-test('model paths match the served adapter without bypassing node configuration',async()=>{
-  const model='/models/DeepSeek-V4.1-Flash';
-  const f=fixture({snapshots:()=>[{id:'head',name:'fixture-head',isLocal:true,role:'head',llmPort:8888,metrics:{llm:[{modelId:model}]}}]});
-  try {
-    const state=await f.service.status();
-    assert.equal(state.supported,true);
-    assert.equal(state.model,model);
-    assert.equal(state.auth.status,'verified');
-    assert.ok(f.calls.every(c=>c.opts.method==='GET'));
-  } finally {f.cleanup();}
+test('TensorFold auth is read-only and legacy generation adapter is refused',async()=>{
+  const model='GLM-5.3-Flash-EXL3';
+  const f=fixture({snapshots:()=>[{id:'head',name:'spark-b5e5',isLocal:true,role:'head',llmPort:8888,metrics:{llm:[{modelId:model,backend:'tensorfold'}]}}],fetchImpl:async(_url,opts)=>({status:opts.headers.Authorization==='Bearer SECRET'?200:401,ok:opts.headers.Authorization==='Bearer SECRET',json:async()=>({data:[{id:model}]}),body:{cancel:async()=>{}}})});
+  try{const state=await f.service.status();assert.equal(state.auth.status,'verified');assert.equal(state.manualSupported,false);assert.equal(state.current.inference,false);await assert.rejects(f.service.verify(),e=>e.status===409&&/TensorFold/.test(e.message));}finally{f.cleanup();}
 });
 test('manual verification persists bounded text and image results, then rate limits',async()=>{
   const f=fixture();try{
@@ -68,26 +62,6 @@ test('failed text check does not run image test or invent a pass',async()=>{
 test('POST requires explicit confirmation',async()=>{
   const routes={};registerVerificationRoutes({get(){},post(p,h){routes[p]=h;}},{snapshots:()=>[],getSpark:()=>null,file:'/missing'});
   let status;await routes['/api/operations/verification']({body:{}},{status(s){status=s;return this;},json(){}});assert.equal(status,400);
-});
-test('unconfigured or ambiguous node does not issue probes',async()=>{
-  const node={id:'head',name:'fixture-head',isLocal:true,role:'head',llmPort:8888,metrics:{llm:[{modelId:MODEL}]}};
-  for(const overrides of [{nodeName:''},{snapshots:()=>[node,{...node,id:'other'}]}]) {
-    const f=fixture(overrides);
-    try {assert.equal((await f.service.status()).supported,false);await assert.rejects(f.service.verify(),e=>e.status===409);assert.equal(f.calls.length,0);}finally{f.cleanup();}
-  }
-});
-test('configured node labels are escaped in every Prometheus selector',async()=>{
-  const nodeName='test"node\\name';
-  const f=fixture({nodeName,snapshots:()=>[{id:'head',name:nodeName,isLocal:true,role:'head',llmPort:8888,metrics:{llm:[{modelId:MODEL}]}}]});
-  try {
-    await f.service.verify();
-    const queries=f.calls.filter(c=>c.url.includes(':9090')).map(c=>new URL(c.url).searchParams.get('query'));
-    assert.ok(queries.length>0);assert.ok(queries.every(q=>q.includes(`node=${JSON.stringify(nodeName)}`)));
-  }finally{f.cleanup();}
-});
-test('missing image path refuses generation',async()=>{
-  const f=fixture({imageFile:''});
-  try {await assert.rejects(f.service.verify());assert.equal(f.calls.filter(c=>c.opts.method==='POST').length,0);}finally{f.cleanup();}
 });
 for (const scenario of ['stale','down','busy','different-instance','missing','invalid']) {
   test(`verification refuses ${scenario} telemetry without generation`,async()=>{

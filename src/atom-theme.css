@@ -1,0 +1,62 @@
+/* AI TOP ATOM: navy chassis, ice-white workspace, cyan light. */
+:root, [data-theme="light"], [data-theme="white"] {
+ --color-base:#edf3f8; --color-surface:#ffffff; --color-surface-elevated:#f3f7fb; --color-surface-hover:#e6f1f8;
+ --color-border:#d5e1ed; --color-border-strong:#a5bdcf; --color-text:#25354c; --color-text-strong:#101d35;
+ --color-muted:#596d83; --color-muted-strong:#3c536d;
+ --color-accent:#006a91; --color-accent-hover:#005777; --color-accent-soft:#007da814; --color-on-accent:#ffffff;
+ --color-chart-primary:#007da8; --color-chart-secondary:#6b65bd; --color-data:var(--color-chart-primary);
+ --body-gradient:radial-gradient(ellipse at 15% 0%,#d6eafa 0%,transparent 55%),linear-gradient(145deg,#f5f8fc,#e8eff6);
+ --shell-gradient:linear-gradient(180deg,#fff,#f2f7fb);
+}
+[data-theme="dark"], [data-theme="oled"] {
+ --color-base:#080e1b; --color-surface:#111c30; --color-surface-elevated:#19283f; --color-surface-hover:#223650;
+ --color-border:#293c55; --color-border-strong:#45617e; --color-text:#e0ebf6; --color-text-strong:#f4faff;
+ --color-muted:#9baec5; --color-muted-strong:#c2d3e7;
+ --color-accent:#70d8f5; --color-accent-hover:#a6ebff; --color-accent-soft:#70d8f51a; --color-on-accent:#071625;
+ --color-chart-primary:#70d8f5; --color-chart-secondary:#b7b1f2; --color-data:var(--color-chart-primary);
+ --body-gradient:radial-gradient(ellipse at 10% 0%,#193753 0%,transparent 55%),linear-gradient(150deg,#080e1b,#101b30);
+ --shell-gradient:linear-gradient(180deg,#111c30,#0c1526);
+}
+[data-theme="oled"] { --color-base:#000; --color-surface:#070d17; }
+/* Keep the reference hero's typography, spacing, responsive rules and height.
+   Its existing gradients, grid, animation and shadows share these cool tokens. */
+:root, [data-theme="light"], [data-theme="white"] {
+ --dgx-metal:#347e9f;
+ --dgx-glow:#8ac7e0;
+}
+[data-theme="dark"], [data-theme="oled"] {
+ --dgx-metal:#80cce6;
+ --dgx-glow:#285a7b;
+}
+/* Model information belongs to the same identity surface, not a separate tile. */
+.dgx-hero__model { background:transparent; }
+:root .pill-item.is-active, :root .pill-item-with-handle.is-active { background:var(--color-accent-soft); color:var(--color-accent); border-color:var(--color-border-strong); }
+:root .logo-pill-dash { color:var(--color-accent); }
+/* Preserve the original four devices' flex sizing, direction, offsets and motion.
+   Change only the grille drawing inside each existing chassis. */
+.dgx-hero__silhouette i {
+ border-radius:5px;
+ background:transparent;
+}
+.dgx-hero__silhouette i::before {
+ content:""; display:block; width:100%; height:100%;
+ background:var(--dgx-metal);
+ -webkit-mask:url('/atom-device.svg?v=66a37b93a5') center / 100% 100% no-repeat;
+ mask:url('/atom-device.svg?v=66a37b93a5') center / 100% 100% no-repeat;
+}
+/* Match connected nodes while retaining the original four-column chassis size.
+   Small fleets stay centered; additional nodes form shallow overlapping rows. */
+.dgx-hero__silhouette {
+ --device-width:calc((100% - 27px) / 4);
+}
+.dgx-hero__silhouette i {
+ position:absolute;
+ width:var(--device-width);
+ height:100%;
+ top:calc(var(--device-row, 0) * 12px);
+ left:calc((100% - (var(--device-columns, 4) * var(--device-width) + (var(--device-columns, 4) - 1) * 9px)) / 2 + var(--device-column, 0) * (var(--device-width) + 9px));
+}
+
+:root { --color-live:var(--color-accent); }
+.product-shell { --color-chart-primary:var(--dgx-metal); --color-chart-secondary:var(--color-muted-strong); }
+.cockpit-hero--compact .cockpit-device-art { pointer-events:none; }

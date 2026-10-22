@@ -1,3 +1,4 @@
+import { useOverlayClose } from "../hooks/useOverlayClose";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { addSpark, testSparkConfig } from "../api/client";
@@ -41,6 +42,7 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
   const [error, setError] = useState<string | null>(null);
   const [portsText, setPortsText] = useState(String(defaultLlmPort));
   const busy = testing || saving;
+  const overlayClose = useOverlayClose(onClose, open && !busy);
   const parsedPorts = portsText.trim() ? portsText.split(",").map((value) => {
     const text = value.trim();
     return /^\d+$/.test(text) ? Number(text) : NaN;
@@ -143,9 +145,7 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
   return createPortal(
     <div
       className={`modal-overlay${visible ? " is-open" : ""}`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
-      }}
+      {...overlayClose}
     >
       <div
         ref={trapRef}
@@ -167,7 +167,7 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
               onChange={(e) => update({ kind: e.target.value as "spark" | "host" })}
               className="w-full rounded border border-border bg-surface-elevated px-3 py-1.5 text-xs text-text outline-none focus:border-accent"
             >
-              <option value="spark">NVIDIA DGX Spark</option>
+              <option value="spark">AI TOP ATOM / NVIDIA GB10</option>
               <option value="host">独立 GPU 主机（Linux，支持 nvidia-smi，非 Spark）</option>
             </select>
           </div>
@@ -270,7 +270,7 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
                 </select>
                 {config.ssh.auth === "key" && (
                   <p className="mt-1 text-[10px] text-muted">
-                    SSH 从 sparkDash 主机发起，不是浏览器。Docker 中需挂载私钥至 /root/.ssh/id_ed25519，或设置 SSH_IDENTITY_FILE。IP 必须从该主机可达；本机采集请勾选“本机”以跳过 SSH。
+                    SSH 从 SparkDash 主机发起，不是浏览器。Docker 中需挂载私钥至 /root/.ssh/id_ed25519，或设置 SSH_IDENTITY_FILE。IP 必须从该主机可达；本机采集请勾选“本机”以跳过 SSH。
                   </p>
                 )}
               </div>

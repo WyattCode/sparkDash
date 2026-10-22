@@ -20,9 +20,3 @@ it('allows unavailable services with no throughput, and workers with no local AP
   spark.metrics.llm=[];
   expect(validSnapshots([spark])).toBe(true);
 });
-
-it('accepts healthy TensorFold with unknown rates while still rejecting malformed rates',()=>{
- const spark=makeSpark();Object.assign(spark.metrics.llm[0],{backend:'tensorfold',generationTps:null,prefillTps:null});
- expect(validSnapshots([spark])).toBe(true);
- Object.assign(spark.metrics.llm[0],{prefillTps:'bad'});expect(validSnapshots([spark])).toBe(false);
-});

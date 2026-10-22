@@ -150,7 +150,7 @@ describe("share card model", () => {
     const card = buildDecodeShareCard(job, { llmPort: 8888, modelId: "DeepSeek-v4.1-Flash-EXL3", sparkName: "spark-38bd" }, Date.UTC(2026, 8, 17));
 
     expect(card.title).toBe("解码基准测试");
-    expect(card.host).toBe("spark-38bd");
+    expect(card.host).toBe("Spark-38bd");
     expect(card.subtitle).toBe("端口 8888 · DeepSeek-v4.1-Flash-EXL3");
     expect(card.status).toEqual({ label: "已完成", tone: "ok" });
     expect(card.meta).toBe("散文 · 400 tok · 1, 2 并发 · 27.8 s");
@@ -243,8 +243,8 @@ describe("share card painter", () => {
     const ctx = fakeContext();
     paintShareCard(ctx, card);
 
-    expect(ctx.texts).toContain("sparkDash");
-    expect(ctx.texts).toContain("spark-38bd");
+    expect(ctx.texts).toContain("SparkDash");
+    expect(ctx.texts).toContain("Spark-38bd");
     expect(ctx.texts).toContain("解码基准测试");
     expect(ctx.texts).toContain("端口 8888 · DeepSeek-v4.1-Flash-EXL3");
     expect(ctx.texts).toContain("已完成");
@@ -263,7 +263,7 @@ describe("share card painter", () => {
   it("strokes the repo's brand mark next to the wordmark", () => {
     const ctx = fakeContext();
     paintShareCard(ctx, buildDecodeShareCard(decodeJob(), { llmPort: 8888, modelId: null }));
-    const bolt = ctx.strokes.find((s) => s.color.startsWith("#e8a830"));
+    const bolt = ctx.strokes.find((s) => s.color.startsWith("#70d8f5"));
     expect(bolt).toBeDefined();
     // Start point, the five interior vertices, and the closing repeat.
     expect(bolt!.points).toHaveLength(BOLT_POINTS.length + 1);

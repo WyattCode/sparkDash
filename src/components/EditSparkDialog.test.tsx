@@ -5,7 +5,7 @@ import { EditSparkDialog } from './EditSparkDialog';
 import { deleteSpark, fetchSparks, setSparkPassword, testSpark, testSparkConfig, updateSpark } from '../api/client';
 import type { SparkConfig, SparkTestResponse } from '../api/types';
 vi.mock('../api/client', () => ({deleteSpark:vi.fn(),fetchSparks:vi.fn(),setSparkPassword:vi.fn(),testSpark:vi.fn(),testSparkConfig:vi.fn(),updateSpark:vi.fn()}));
-const node: SparkConfig = {id:'head-a',name:'主节点',lanIp:'192.168.1.1',isLocal:false,ssh:{host:'192.168.1.1',user:'fixture',auth:'pass',hasPassword:true},comfyMonitoring:true,comfyPort:8188};
+const node: SparkConfig = {id:'head-a',name:'主节点',lanIp:'192.168.1.1',isLocal:false,ssh:{host:'192.168.1.1',user:'wyatt',auth:'pass',hasPassword:true},comfyMonitoring:true,comfyPort:8188};
 const result = {ok:true,capabilities:[]} as unknown as SparkTestResponse;
 const button = (text:string) => [...document.querySelectorAll('button')].find(b=>b.textContent===text)!;
 function input(selector:string,value:string){act(()=>{const el=document.querySelector(selector)!;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(el,value);el.dispatchEvent(new Event('input',{bubbles:true}));});}
@@ -19,6 +19,22 @@ it('loading failure retries and invalid port blocks writes',async()=>{
   input('[aria-label="ComfyUI 端口"]','65536');expect(button('保存').disabled).toBe(true);expect(button('测试连接').disabled).toBe(true);
   expect(document.querySelector('[aria-invalid=true]')).not.toBeNull();expect(updateSpark).not.toHaveBeenCalled();
 });
+it('selecting text out of the sheet keeps the draft; a deliberate backdrop click closes',async()=>{
+  const close=vi.fn();await open(close);
+  const overlay=document.querySelector<HTMLElement>('.modal-overlay')!;
+  const field=document.querySelector<HTMLInputElement>('input[type=text]')!;
+  input('input[type=text]','草稿未保存');
+  act(()=>{
+    field.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+    overlay.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+  });
+  expect(close).not.toHaveBeenCalled();expect(field.value).toBe('草稿未保存');
+  act(()=>{
+    overlay.dispatchEvent(new MouseEvent('mousedown',{bubbles:true}));
+    overlay.dispatchEvent(new MouseEvent('click',{bubbles:true}));
+  });
+  expect(close).toHaveBeenCalledOnce();expect(updateSpark).not.toHaveBeenCalled();
+});
 it('test uses a draft password without persisting it; edits clear old results',async()=>{
   await open();input('input[type=password]','new-test-secret');act(()=>button('测试连接').click());await flush();
   expect(setSparkPassword).not.toHaveBeenCalled();expect(updateSpark).not.toHaveBeenCalled();
@@ -29,11 +45,21 @@ it('changed password-auth target requires a fresh password, not saved secret for
   await open();input('[aria-label="ComfyUI 端口"]','9000');act(()=>button('测试连接').click());await flush();
   expect(document.querySelector('[role=alert]')?.textContent).toContain('重新输入 SSH 密码');expect(testSpark).not.toHaveBeenCalled();expect(testSparkConfig).not.toHaveBeenCalled();
 });
-it('partial save reports persisted password and preserves config draft',async()=>{
+it('failed save preserves password draft and never writes credentials separately',async()=>{
   vi.mocked(setSparkPassword).mockResolvedValue({} as never);vi.mocked(updateSpark).mockRejectedValue(Error('配置保存失败'));
   const close=vi.fn();await open(close);input('input[type=password]','new-secret');act(()=>button('保存').click());await flush();
-  expect(document.querySelector('[role=status]')?.textContent).toContain('密码也已更新');expect(document.querySelector('[role=alert]')?.textContent).toContain('配置保存失败');
-  expect((document.querySelector('input[type=password]') as HTMLInputElement).value).toBe('');expect(close).not.toHaveBeenCalled();
+  expect(setSparkPassword).not.toHaveBeenCalled();
+  expect(vi.mocked(updateSpark).mock.calls[0][1].ssh?.password).toBe('new-secret');
+  expect(document.querySelector('[role=alert]')?.textContent).toContain('配置保存失败');
+  expect((document.querySelector('input[type=password]') as HTMLInputElement).value).toBe('new-secret');expect(close).not.toHaveBeenCalled();
+});
+it('testing retains a typed password for the subsequent single save request',async()=>{
+  await open();input('input[type=password]','new-test-secret');
+  act(()=>button('测试连接').click());await flush();
+  expect((document.querySelector('input[type=password]') as HTMLInputElement).value).toBe('new-test-secret');
+  act(()=>button('保存').click());await flush();
+  expect(setSparkPassword).not.toHaveBeenCalled();
+  expect(vi.mocked(updateSpark).mock.calls[0][1].ssh?.password).toBe('new-test-secret');
 });
 it('in-flight save blocks double submit, close and test; focus stays inside',async()=>{
   let finish!:(v:never)=>void;vi.mocked(updateSpark).mockReturnValue(new Promise(r=>{finish=r;}));

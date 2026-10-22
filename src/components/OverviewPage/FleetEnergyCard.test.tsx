@@ -34,6 +34,10 @@ function energy(overrides: Partial<FleetEnergy> = {}): FleetEnergy {
 }
 
 describe("FleetEnergyCard states", () => {
+  it('uses the server coverage window independently of fleet size',async()=>{
+    fetchEnergy.mockResolvedValue(energy({coverage24hMs:3600000,coverage24hWindowMs:7200000}));
+    const view=render(<FleetEnergyCard nodeCount={4}/>);await flush();expect(view.container.textContent).toContain('50.0%');
+  });
   it("labels estimated values and keeps hourly gaps empty", async () => {
     fetchEnergy.mockResolvedValue(energy());
     const { container } = render(<FleetEnergyCard nodeCount={2} />);
@@ -60,7 +64,7 @@ describe("FleetEnergyCard states", () => {
     fetchEnergy.mockResolvedValue(energy({ membershipChanged: true, restartRequired: true }));
     const membership = render(<FleetEnergyCard nodeCount={2} />);
     await flush();
-    expect(membership.container.textContent).toContain("重启 sparkDash");
+    expect(membership.container.textContent).toContain("重启 SparkDash");
 
     fetchEnergy.mockRejectedValue(new Error("disk write failed"));
     const failed = render(<FleetEnergyCard nodeCount={2} />);

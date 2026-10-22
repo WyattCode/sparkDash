@@ -36,3 +36,10 @@ test/
 # Runtime connectivity logs and local restore backups
 config/connectivity-events.jsonl
 .dist-backup-*/
+
+# Private runtime history; never publish model/usage data or credentials.
+config/connectivity-events.jsonl.*
+config/llm-token-totals.json*
+config/native-metric-history.json*
+.node_modules-backup*/
+.node_modules-next*/

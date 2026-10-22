@@ -9,6 +9,7 @@
  * without a real canvas context.
  */
 import { decodeBenchTypeLabel } from "../../shared/llmPrompts.js";
+import { displayName } from '../../displayName';
 import { formatContextSize } from "../../shared/prefillBench.js";
 import type { DecodeBenchJob, PrefillBenchJob } from "../../api/types";
 
@@ -147,8 +148,8 @@ export function buildDecodeShareCard(
 
   const concurrencies = job.config?.concurrencies ?? [];
   return {
-    brand: "sparkDash",
-    host: src.sparkName || "",
+    brand: "SparkDash",
+    host: displayName(src.sparkName || ""),
     title: "解码基准测试",
     subtitle: shareCardSubtitle(src),
     status: shareCardStatus(job.status),
@@ -195,8 +196,8 @@ export function buildPrefillShareCard(
 
   const sizes = job.config?.contextSizes ?? [];
   return {
-    brand: "sparkDash",
-    host: src.sparkName || "",
+    brand: "SparkDash",
+    host: displayName(src.sparkName || ""),
     title: "预填充基准测试",
     subtitle: shareCardSubtitle(src),
     status: shareCardStatus(job.status),
@@ -255,16 +256,16 @@ export const BOLT_POINTS: ReadonlyArray<readonly [number, number]> = [
 
 /** Colours mirror the app's dark theme so the card matches the dashboard. */
 const PALETTE = {
-  top: "#0a0a0a",
-  bottom: "#181818",
-  panel: "#1a1a1a",
-  panelBorder: "#353535",
-  panelRowBorder: "#2a2a2a",
-  badge: "#262626",
-  text: "#e4e4e4",
+  top: "#080e1b",
+  bottom: "#111c30",
+  panel: "#19283f",
+  panelBorder: "#293c55",
+  panelRowBorder: "#293c55",
+  badge: "#223650",
+  text: "#e0ebf6",
   textStrong: "#ffffff",
-  muted: "#8a8a8a",
-  accent: "#e8a830",
+  muted: "#9baec5",
+  accent: "#70d8f5",
   success: "#4dbf91",
   danger: "#e5594d",
   warning: "#e0a838",
