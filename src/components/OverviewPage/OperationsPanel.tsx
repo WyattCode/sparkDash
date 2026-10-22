@@ -173,7 +173,6 @@ export function OperationsPanel({sparks, stale, onSelect}: {sparks: SparkSnapsho
             {native&&v('mtp')!=null&&<Stat label="草稿 Token 接受率" value={number(v('mtp')!*100,'%')} note="服务启动以来 · 接受 / 已验证草稿 Token"/>}
             {native&&(['prefill','decode','tpot'] as const).map((key,index)=>v(key)==null?null:<Stat key={key} label={['预填充耗时 P95','解码耗时 P95','每输出 Token 耗时 P95'][index]} value={latency(v(key),v(`${key}Samples`))} note={`服务启动以来 · ${sampleHint(v(`${key}Samples`))}${key==='tpot'?' · 单请求平均，非 Token 间隔':''}`}/>)}
             {native&&v('completed')!=null&&<Stat label="已完成请求" value={formatCount(v('completed'))} note="服务启动以来 · 响应耗时样本计数，非 HTTP 成功数"/>}
-            {native&&v('disconnected')!=null&&<Stat label="客户端中断" value={formatCount(v('disconnected'))} note="服务启动以来 · 回复结束前客户端离开"/>}
             {(check?.inference||check?.warmup)&&<Stat label="推理验收 / 预热" value={native&&!check?.inference?'尚未执行独立验收':recordLabel(check?.inference,checkFresh&&check?.current?.inference,'inference')} tone={verificationTone(check?.inference,checkFresh&&check?.current?.inference)} note={native&&!check?.warmup?(checkFresh?'模型 API 可达；尚未导入预热实测记录':'尚未导入预热实测记录'):recordLabel(check?.warmup,checkFresh&&check?.current?.warmup,'warmup')+' · 详见验收记录'}/>}
             {check?.vision&&<Stat label="多模态能力" value={native&&!check?.vision?'图像输入尚未核验':recordLabel(check?.vision,checkFresh&&check?.current?.vision,'vision')} tone={verificationTone(check?.vision,checkFresh&&check?.current?.vision)} note="仅核验图像输入；不代表音频、视频或完整视觉质量评测"/>}
           </div>

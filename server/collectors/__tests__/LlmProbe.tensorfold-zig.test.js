@@ -70,3 +70,9 @@ test('switching back to GLM seeds native counters rather than producing cross-mo
  let s=await p._probeOpenAICompatible();assert.equal(s.modelId,'GLM-5.3-Flash-EXL3');assert.equal(s.contextLength,1048576);assert.equal(s.generationTps,null);assert.equal(s.totalOutputTokens,40000);
  completion+=40;p.lastProbeTime=Date.now()-2000;s=await p._probeOpenAICompatible();assert.ok(s.generationTps>19&&s.generationTps<=20);assert.equal(s.slotsTotal,4);
 });
+
+test('hybrid GLM health uses current live rates, eight lanes, model context and native counters',async()=>{
+ const p=new LlmProbe({lanIp:'10.77.0.1'},8888);p.serverIsOpenAI=true;
+ p._fetch=async url=>({ok:true,status:200,json:async()=>String(url).endsWith('/v1/models')?{data:[{id:'GLM-5.3-Flash-EXL3',owned_by:'tensorfold',max_model_len:1048576}]}:{status:'ok',ok:true,backend:'tensorfold',max_batch_size:8,streams:{max:8},live:{connections:3,waiting:1,decode_tokens_per_second:55,prefill_tokens_per_second:1000},completion_tokens_total:999999},text:async()=> 'tensorfold:requests_running 2\ntensorfold:requests_waiting 1\ntensorfold:generation_tokens_total 3195\ntensorfold:prompt_tokens_total 1000\ntensorfold:prompt_tokens_cached_total 200'});
+ const s=await p._probeOpenAICompatible();assert.equal(s.slotsTotal,8);assert.equal(s.contextLength,1048576);assert.equal(s.generationTps,55);assert.equal(s.prefillTps,1000);assert.equal(s.requestsRunning,2);assert.equal(s.totalOutputTokens,3195);assert.equal(s.prefixCacheHitRate,.2);
+});

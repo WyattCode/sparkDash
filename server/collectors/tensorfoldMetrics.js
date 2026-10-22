@@ -41,7 +41,7 @@ export function parseTensorfoldMetrics(text) {
   const prefill=histogram('tensorfold:request_prefill_seconds');
   const decode=histogram('tensorfold:request_decode_seconds');
   const tpot=histogram('tensorfold:request_time_per_output_token_seconds');
-  const cached=sum('tensorfold_health:cached_tokens_total');
+  const cached=sum('tensorfold:prompt_tokens_cached_total') ?? sum('tensorfold_health:cached_tokens_total');
   const prompt=sum('tensorfold:prompt_tokens_total');
   const drafted=sum('tensorfold:mtp_drafted_total'), accepted=sum('tensorfold:mtp_accepted_total');
   const poolTotal=sum('tensorfold_health:pool_tokens'), poolFree=sum('tensorfold_health:pool_free_tokens');
