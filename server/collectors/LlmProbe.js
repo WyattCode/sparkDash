@@ -520,16 +520,6 @@ export class LlmProbe {
       this.prefillTps = null;
     }
 
-    // A successful models listing does not make last poll's telemetry fresh.
-    if (this.backendType === "tensorfold") {
-      for (const key of ['generationTps','prefillTps','requestsRunning','requestsWaiting',
-        'slotsTotal','totalOutputTokens','kvCacheUsage','ttftP95Seconds','ttftSeconds',
-        'preemptionsTotal','prefixCacheHitRate','e2eP95Seconds','itlP95Seconds',
-        'mtpAcceptanceRate','cachedPrefillTps','uncachedPrefillTps']) this[key] = null;
-      this.contextLength = modelContextLength;
-      this.slotsActive = 0;
-    }
-
     // EXL3 serve_openai.py: live tok/s from /health cumulative counters (no Prometheus).
     if (this.backendType === "exl3" || this.backendType === "tensorfold" || this.backendType == null) {
       try {
@@ -537,8 +527,8 @@ export class LlmProbe {
         if (healthRes.ok) {
           const health = await healthRes.json().catch(() => null);
           if (this.backendType === "tensorfold" && health?.status === "ok") {
-            const healthContext = health.context_length;
-            this.contextLength = modelContextLength ?? (Number.isSafeInteger(healthContext) && healthContext > 0 ? healthContext : null);
+            // This backend does not expose context in health; never retain an old model's capacity.
+            this.contextLength = modelContextLength;
             const live = health.live ?? {};
             const count = value => Number.isInteger(value) && value >= 0 ? value : null;
             const connections = count(live.connections);
@@ -551,13 +541,12 @@ export class LlmProbe {
             const rate = value => Number.isFinite(value) && value >= 0 ? value : null;
             this.generationTps = connections === 0 ? 0 : rate(live.decode_tokens_per_second);
             this.prefillTps = connections === 0 ? 0 : rate(live.prefill_tokens_per_second);
-            // Hybrid builds include lifetime counters; minimal Zig health may omit them.
-            this.totalOutputTokens = count(health.completion_tokens_total);
+            this.totalOutputTokens = null; // Zig /health exposes rates, not lifetime counters.
             try {
               const res = await this._fetch(`${this.baseUrl}/metrics`);
               if (res.ok) {
                 const m = parseTensorfoldMetrics(await res.text());
-                this.totalOutputTokens = m.completionTotal ?? this.totalOutputTokens;
+                this.totalOutputTokens = m.completionTotal;
                 if (m.running != null) this.requestsRunning = m.running;
                 if (m.waiting != null) this.requestsWaiting = m.waiting;
                 this.slotsActive = this.requestsRunning ?? 0;

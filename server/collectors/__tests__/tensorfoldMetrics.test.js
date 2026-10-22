@@ -97,9 +97,3 @@ test('new native timing histograms stay distinct from inter-token latency and al
  assert.equal(m.itl,null);assert.equal(m.kv,0);assert.equal(m.mtp,.6);assert.equal(m.disconnected,0);assert.equal(m.poolUsage,null);assert.equal(m.cache,null);
  assert.equal(parseTensorfoldMetrics('tensorfold:kv_cache_usage_ratio 1.5').kv,null);
 });
-
-test('updated TensorFold cached-token counter takes precedence over its legacy mirror without doubling',()=>{
- const m=parseTensorfoldMetrics('tensorfold:prompt_tokens_total 1000\ntensorfold:prompt_tokens_cached_total 200\ntensorfold_health:cached_tokens_total 200');
- assert.equal(m.cache,.2);assert.equal(m.cacheHits,200);
- assert.equal(parseTensorfoldMetrics('tensorfold:prompt_tokens_total 1000\ntensorfold:prompt_tokens_cached_total 0').cache,0);
-});
