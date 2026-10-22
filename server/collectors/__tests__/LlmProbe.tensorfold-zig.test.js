@@ -90,3 +90,21 @@ test('detection reset clears probe clock so recovery only seeds cumulative count
  const p=new LlmProbe({lanIp:'127.0.0.1'},8888);p.lastProbeTime=Date.now();
  p._resetDetection();assert.equal(p.lastProbeTime,0);assert.equal(p._nativeCachedPromptTokens,null);
 });
+
+test('partial native counters cannot misalign cached-token and prompt baselines',()=>{
+ const p=new LlmProbe({lanIp:'127.0.0.1'},8888);
+ const apply=(input,output,cached)=>p._applyExl3Health({backend:'tensorfold',busy:true,prompt_tokens_total:input,completion_tokens_total:output,cached_tokens_total:cached},2);
+ apply(100,50,80);apply(1100,null,1030);assert.equal(p.prefillTps,null);assert.equal(p.totalOutputTokens,null);
+ apply(2100,70,2030);assert.equal(p.prefillTps,null);assert.equal(p.generationTps,null);
+ apply(3100,90,2980);assert.equal(p.prefillTps,25);assert.equal(p.generationTps,10);
+});
+
+test('a disappearing cache field is not counted as fresh computation and counter reset reseeds',()=>{
+ const p=new LlmProbe({lanIp:'127.0.0.1'},8888);
+ const apply=(input,output,cached)=>p._applyExl3Health({backend:'tensorfold',busy:true,prompt_tokens_total:input,completion_tokens_total:output,cached_tokens_total:cached},2);
+ apply(100,50,80);apply(1100,60,undefined);assert.equal(p.prefillTps,null);
+ apply(2100,70,2030);assert.equal(p.prefillTps,null);
+ apply(3100,90,2980);assert.equal(p.prefillTps,25);
+ apply(10,1,0);assert.equal(p.generationTps,null);assert.equal(p.prefillTps,null);
+ apply(110,21,50);assert.equal(p.generationTps,10);assert.equal(p.prefillTps,25);
+});

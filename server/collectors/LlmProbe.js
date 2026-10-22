@@ -90,6 +90,7 @@ export class LlmProbe {
     this.slotState = new Map();
     this.lastTokenCounts = { input: 0, output: 0 };
     this._nativeCachedPromptTokens = null;
+    this._nativeCounterReady = false;
     this._nativeQueueFromHealth = false;
     /** Previous prefill counters by kind; null until first labeled sample. */
     this.lastPrefillKinds = null;
@@ -281,6 +282,7 @@ export class LlmProbe {
     this.slotState.clear();
     this.lastTokenCounts = { input: 0, output: 0 };
     this._nativeCachedPromptTokens = null;
+    this._nativeCounterReady = false;
     this._nativeQueueFromHealth = false;
     this.lastPrefillKinds = null;
     this.lastTtftSum = null;
@@ -534,6 +536,8 @@ export class LlmProbe {
         if (healthRes.ok) {
           const health = await healthRes.json().catch(() => null);
           if (this.backendType === "tensorfold" && health?.status === "ok") {
+            // Live-rate samples do not advance the legacy cumulative-counter baseline.
+            this._nativeCounterReady = false;
             // This backend does not expose context in health; never retain an old model's capacity.
             this.contextLength = modelContextLength;
             const live = health.live ?? {};
@@ -588,6 +592,7 @@ export class LlmProbe {
       } catch {
         /* health optional unless already classified exl3 */
       }
+      if (this.backendType === "tensorfold") this._nativeCounterReady = false;
       if (this.backendType === "exl3" || this.backendType === "tensorfold") return this._getSnapshot();
     }
 
@@ -869,9 +874,13 @@ export class LlmProbe {
    * @param {number} dtSec
    */
   _applyExl3Health(data, dtSec) {
-    const prompt = Number(data?.prompt_tokens_total);
-    const completion = Number(data?.completion_tokens_total);
     const native = data?.backend === 'tensorfold';
+    const counter = value => typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : NaN;
+    const prompt = native ? counter(data?.prompt_tokens_total) : Number(data?.prompt_tokens_total);
+    const completion = native ? counter(data?.completion_tokens_total) : Number(data?.completion_tokens_total);
+    const nativeRebase = native && (!this._nativeCounterReady || !(dtSec > 0 && dtSec < 10) ||
+      prompt < this.lastTokenCounts.input || completion < this.lastTokenCounts.output);
+    if (native) this._nativeCounterReady = Number.isFinite(prompt) && Number.isFinite(completion);
     const cached = native && typeof data.cached_tokens_total === 'number' && Number.isFinite(data.cached_tokens_total) && data.cached_tokens_total >= 0 ? data.cached_tokens_total : null;
     const previousCached = this._nativeCachedPromptTokens;
     this._nativeCachedPromptTokens = cached;
@@ -894,6 +903,19 @@ export class LlmProbe {
     this.cachedPrefillTps = null;
     this.uncachedPrefillTps = null;
 
+    if (native && !this._nativeCounterReady) {
+      this.generationTps = busy ? null : 0;
+      this.prefillTps = busy ? null : 0;
+      this.totalOutputTokens = Number.isFinite(completion) ? completion : null;
+      this._nativeCachedPromptTokens = null;
+      return;
+    }
+    if (nativeRebase) {
+      dtSec = 0;
+      this.generationTps = busy ? null : 0;
+      this.prefillTps = busy ? null : 0;
+    }
+
     if (!Number.isFinite(completion)) {
       this.generationTps = busy ? this.generationTps : 0;
       if (!busy) this.prefillTps = 0;
@@ -905,7 +927,7 @@ export class LlmProbe {
       this.generationTps = Math.max(0, Math.round((deltaOut / dtSec) * 100) / 100);
       if (Number.isFinite(prompt)) {
         const deltaIn = prompt - this.lastTokenCounts.input;
-        const deltaCached = cached == null ? 0 : previousCached == null ? null : cached - previousCached;
+        const deltaCached = cached == null ? previousCached == null ? 0 : null : previousCached == null ? null : cached - previousCached;
         // Native prompt totals include cache hits; only computed tokens represent prefill work.
         this.prefillTps = native && (deltaIn < 0 || deltaCached == null || deltaCached < 0 || deltaCached > deltaIn)
           ? null : Math.max(0, Math.round(((deltaIn - deltaCached) / dtSec) * 100) / 100);
