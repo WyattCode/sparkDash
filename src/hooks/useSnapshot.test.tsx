@@ -49,6 +49,14 @@ function readProbe() {
 }
 
 describe("useSnapshot connection lifecycle", () => {
+  it('ignores stale registry frames without replacing the latest UI snapshot',()=>{
+    render(<Probe/>);const socket=MockSocket.instances[0];
+    act(()=>{socket.open();socket.emit({type:'snapshot',generatedAt:50000,sparks:[makeSpark('head')]});});
+    const before=readProbe();
+    act(()=>socket.emit({type:'snapshot',generatedAt:49000,sparks:[]}));
+    expect(readProbe()).toEqual(before);
+    expect(getMetricHistorySamples('head','llm:8888.tps')).toHaveLength(1);
+  });
   it('keeps the last good snapshot and history when throughput is corrupt', () => {
     render(<Probe/>);const socket=MockSocket.instances[0];
     act(()=>{socket.open();socket.emit({type:'snapshot',generatedAt:50000,sparks:[makeSpark('head')]});});

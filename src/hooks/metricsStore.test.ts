@@ -31,6 +31,17 @@ describe("metricsStore timestamp contract", () => {
     ]);
   });
 
+  it('an older frame cannot roll model identity back and erase current history',()=>{
+    const spark=makeSpark();spark.llmPorts=[8888];
+    Object.assign(spark.metrics.llm[0],{backend:'sglang',modelId:'current',available:true,generationTps:100});
+    ingestSnapshots([spark],5000);
+    Object.assign(spark.metrics.llm[0],{backend:'tensorfold',modelId:'old',generationTps:20});
+    ingestSnapshots([spark],4000);
+    expect(getMetricHistorySamples(spark.id,'llm:8888.tps')).toEqual([{at:5000,value:100}]);
+    ingestSnapshots([],3000);
+    expect(getMetricHistorySamples(spark.id,'llm:8888.tps')).toHaveLength(1);
+  });
+
   it("replaces duplicate frames and retains real disconnect gaps", () => {
     const spark = makeSpark();
     ingestSnapshots([spark], 1_000);

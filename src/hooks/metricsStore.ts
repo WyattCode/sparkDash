@@ -38,6 +38,7 @@ const historyValues = new Map<string, readonly number[]>();
 const historyTails = new Map<string, readonly number[]>();
 const sparkMap = new Map<string, SparkSnapshot>();
 const llmIdentities=new Map<string,string>();
+let lastSnapshotAt = -Infinity;
 const listeners = new Set<() => void>();
 
 const EMPTY: readonly number[] = Object.freeze([] as number[]);
@@ -110,7 +111,11 @@ function removeHistoryForSpark(sparkId: string) {
 }
 
 /** Ingest a full WS snapshot: update latest-per-spark + append history series. */
-export function ingestSnapshots(sparks: SparkSnapshot[], at = Date.now()): void {
+export function ingestSnapshots(sparks: SparkSnapshot[], at = Date.now()): boolean {
+  // Reject the entire stale frame before model identity, current snapshots or
+  // registry membership can erase a newer history. Per-series guards are too late.
+  if (!Number.isFinite(at) || at < lastSnapshotAt) return false;
+  lastSnapshotAt = at;
   const alive = new Set<string>();
 
   for (const s of sparks) {
@@ -184,6 +189,7 @@ export function ingestSnapshots(sparks: SparkSnapshot[], at = Date.now()): void 
   // Always notify: sparkMap refs refresh every frame (online flips included),
   // even when no history sample was appended.
   notify();
+  return true;
 }
 
 /** Read the latest cached snapshot for a spark (subscribe via useSpark). */
@@ -261,6 +267,7 @@ export function useSpark(id: string): SparkSnapshot | undefined {
 
 /** Clear all cached state — used on hard reload paths / tests. */
 export function _resetStore(): void {
+  lastSnapshotAt = -Infinity;
   llmIdentities.clear();
   history.clear();
   historySamples.clear();

@@ -62,6 +62,9 @@ export function useSnapshot() {
         const msg: WsSnapshot = JSON.parse(ev.data);
         if (msg?.type === "snapshot" && validSnapshots(msg.sparks) && (msg.generatedAt == null || Number.isFinite(msg.generatedAt))) {
           const receivedAt = Date.now();
+          // Reject stale frames consistently for both chart history and React
+          // state; an old empty registry must not remove current node cards.
+          if (!ingestSnapshots(msg.sparks, msg.generatedAt ?? receivedAt)) return;
           latestFrame.current = {generatedAt:msg.generatedAt,serverBootId:msg.bootId};
           const states=msg.sparks.map(s=>({id:s.id,online:s.online}));
           const signature=JSON.stringify([msg.bootId,states]);
@@ -69,8 +72,6 @@ export function useSnapshot() {
             receivedSignature.current=signature;
             diagnostics.current?.record('snapshot_received',{...latestFrame.current,states});
           }
-          // Feed the central history store (8b) before notifying React state.
-          ingestSnapshots(msg.sparks, msg.generatedAt ?? receivedAt);
           setSparks(msg.sparks);
           setConnected(true);
           setLastValidSnapshotAt(receivedAt);
