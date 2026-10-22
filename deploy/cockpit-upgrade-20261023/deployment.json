@@ -1,0 +1,23 @@
+{
+  "implementation_commit": "23d3c7f",
+  "deployed_url": "http://192.168.10.125:5555/",
+  "bind": "0.0.0.0:5555",
+  "model": "DeepSeek-V4.1-Flash-1017",
+  "model_capacity": 4,
+  "reported_context": null,
+  "network_modified": false,
+  "original_configured_lan": "192.168.10.124",
+  "node_and_key_files_unchanged": true,
+  "source_rebuild_matches_live": true,
+  "backend_tests": 498,
+  "frontend_tests": 315,
+  "responsive_theme_view_checks": 36,
+  "model_stream_protocol": {
+    "status": 200,
+    "done": true,
+    "max_tokens": 8
+  },
+  "model_service_restarted": false,
+  "github_pushed": false,
+  "verified_utc": "2026-10-22T17:16:50.973382+00:00"
+}
