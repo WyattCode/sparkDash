@@ -89,6 +89,8 @@ export class LlmProbe {
     // Per-slot rate tracking (for llama.cpp native path)
     this.slotState = new Map();
     this.lastTokenCounts = { input: 0, output: 0 };
+    this._nativeCachedPromptTokens = null;
+    this._nativeQueueFromHealth = false;
     /** Previous prefill counters by kind; null until first labeled sample. */
     this.lastPrefillKinds = null;
     /** Previous vLLM TTFT histogram `_sum` (seconds). null until first sample. */
@@ -251,6 +253,7 @@ export class LlmProbe {
   }
 
   _resetDetection() {
+    this.lastProbeTime = 0;
     this.serverIsOpenAI = null;
     this.backendType = null;
     this.authOpen = null;
@@ -277,6 +280,8 @@ export class LlmProbe {
     this.mtpAcceptanceRate = null;
     this.slotState.clear();
     this.lastTokenCounts = { input: 0, output: 0 };
+    this._nativeCachedPromptTokens = null;
+    this._nativeQueueFromHealth = false;
     this.lastPrefillKinds = null;
     this.lastTtftSum = null;
     this.lastTtftCount = null;
@@ -520,6 +525,8 @@ export class LlmProbe {
       this.prefillTps = null;
     }
 
+    this._nativeQueueFromHealth = false;
+
     // EXL3 serve_openai.py: live tok/s from /health cumulative counters (no Prometheus).
     if (this.backendType === "exl3" || this.backendType === "tensorfold" || this.backendType == null) {
       try {
@@ -535,6 +542,7 @@ export class LlmProbe {
             const waiting = count(live.waiting);
             this._applyExl3Health({busy: connections > 0, streams: {max: health.max_batch_size}}, dtSec);
             this.requestsWaiting = waiting;
+            this._nativeQueueFromHealth = waiting != null;
             this.requestsRunning = connections == null || waiting == null || waiting > connections ? null : connections - waiting;
             this.slotsActive = this.requestsRunning ?? 0;
             this.slotsTotal = Number.isInteger(health.max_batch_size) && health.max_batch_size > 0 ? health.max_batch_size : null;
@@ -548,7 +556,7 @@ export class LlmProbe {
                 const m = parseTensorfoldMetrics(await res.text());
                 this.totalOutputTokens = m.completionTotal;
                 if (m.running != null) this.requestsRunning = m.running;
-                if (m.waiting != null) this.requestsWaiting = m.waiting;
+                if (this.requestsWaiting == null && m.waiting != null) this.requestsWaiting = m.waiting;
                 this.slotsActive = this.requestsRunning ?? 0;
                 this.ttftP95Seconds = m.ttft; this.e2eP95Seconds = m.e2e;
                 this.prefixCacheHitRate = m.cache; this.mtpAcceptanceRate = m.mtp;
@@ -863,6 +871,10 @@ export class LlmProbe {
   _applyExl3Health(data, dtSec) {
     const prompt = Number(data?.prompt_tokens_total);
     const completion = Number(data?.completion_tokens_total);
+    const native = data?.backend === 'tensorfold';
+    const cached = native && typeof data.cached_tokens_total === 'number' && Number.isFinite(data.cached_tokens_total) && data.cached_tokens_total >= 0 ? data.cached_tokens_total : null;
+    const previousCached = this._nativeCachedPromptTokens;
+    this._nativeCachedPromptTokens = cached;
     const busy = data?.busy === true;
     const ctx = Number(data?.context_length);
     if (Number.isFinite(ctx) && ctx > 0) this.contextLength = Math.round(ctx);
@@ -893,7 +905,10 @@ export class LlmProbe {
       this.generationTps = Math.max(0, Math.round((deltaOut / dtSec) * 100) / 100);
       if (Number.isFinite(prompt)) {
         const deltaIn = prompt - this.lastTokenCounts.input;
-        this.prefillTps = Math.max(0, Math.round((deltaIn / dtSec) * 100) / 100);
+        const deltaCached = cached == null ? 0 : previousCached == null ? null : cached - previousCached;
+        // Native prompt totals include cache hits; only computed tokens represent prefill work.
+        this.prefillTps = native && (deltaIn < 0 || deltaCached == null || deltaCached < 0 || deltaCached > deltaIn)
+          ? null : Math.max(0, Math.round(((deltaIn - deltaCached) / dtSec) * 100) / 100);
       } else if (!busy && this.generationTps <= 0) {
         this.prefillTps = 0;
       }
@@ -1735,6 +1750,7 @@ export class LlmProbe {
       kvCacheUsage: this.kvCacheUsage,
       requestsRunning: this.requestsRunning,
       requestsWaiting: this.requestsWaiting,
+      requestsWaitingFromHealth: this._nativeQueueFromHealth,
       ttftP95Seconds: this.ttftP95Seconds,
       ttftSeconds: this.ttftSeconds,
       preemptionsTotal: this.preemptionsTotal,

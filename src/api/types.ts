@@ -305,6 +305,7 @@ export interface LlmMetrics {
   requestsRunning?: number | null;
   /** vLLM waiting request count. null when unavailable. */
   requestsWaiting?: number | null;
+  requestsWaitingFromHealth?: boolean;
   /** vLLM time-to-first-token p95 in seconds. null when unavailable. */
   ttftP95Seconds?: number | null;
   /** Live recent-window mean TTFT (seconds) from vLLM histogram sum/count deltas. null when unavailable. */

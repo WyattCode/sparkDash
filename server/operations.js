@@ -114,6 +114,11 @@ export function registerOperationsRoutes(app, snapshots = () => [], eventFile = 
           const text = await res.text();
           if (!text.includes('tensorfold:')) throw new Error('not TensorFold metrics');
           const sample = parseTensorfoldMetrics(text);
+          const llmAt = s.telemetry?.updatedAt?.llm;
+          if (llm.requestsWaitingFromHealth === true && typeof llmAt === 'number' && generatedAt >= llmAt && generatedAt - llmAt < 30000 &&
+              Number.isInteger(llm.requestsWaiting) && llm.requestsWaiting >= 0) {
+            sample.waiting = llm.requestsWaiting;
+          }
           for (const [name,value] of Object.entries(sample)) {
             metrics[name] ||= {series:[],error:null};
             metrics[name].series.push({labels,points:[[generatedAt,value]]});

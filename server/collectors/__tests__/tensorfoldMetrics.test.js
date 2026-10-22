@@ -97,3 +97,14 @@ test('new native timing histograms stay distinct from inter-token latency and al
  assert.equal(m.itl,null);assert.equal(m.kv,0);assert.equal(m.mtp,.6);assert.equal(m.disconnected,0);assert.equal(m.poolUsage,null);assert.equal(m.cache,null);
  assert.equal(parseTensorfoldMetrics('tensorfold:kv_cache_usage_ratio 1.5').kv,null);
 });
+
+test('operations keeps a fresh probed queue and discards an expired queue override',async()=>{
+ const original=globalThis.fetch;let age=0;
+ globalThis.fetch=async()=>({ok:true,text:async()=> 'tensorfold:requests_waiting 0'});
+ try{
+  const routes=new Map();registerOperationsRoutes({get:(p,h)=>routes.set(p,h)},()=>[{id:'head',name:'ATOM',isLocal:true,role:'head',llmMonitoring:true,llmPorts:[8888],telemetry:{updatedAt:{llm:Date.now()-age}},metrics:{llm:[{available:true,backend:'tensorfold',requestsWaiting:2,requestsWaitingFromHealth:true}]}}],null,()=>({}));
+  let data;await routes.get('/api/operations')({}, {json:x=>data=x});assert.equal(data.metrics.waiting.series[0].points[0][1],2);
+  const other=new Map();age=60000;registerOperationsRoutes({get:(p,h)=>other.set(p,h)},()=>[{id:'head',name:'ATOM',isLocal:true,role:'head',llmMonitoring:true,llmPorts:[8888],telemetry:{updatedAt:{llm:Date.now()-age}},metrics:{llm:[{available:true,backend:'tensorfold',requestsWaiting:2,requestsWaitingFromHealth:true}]}}],null,()=>({}));
+  await other.get('/api/operations')({}, {json:x=>data=x});assert.equal(data.metrics.waiting.series[0].points[0][1],0);
+ }finally{globalThis.fetch=original;}
+});

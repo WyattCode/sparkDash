@@ -70,3 +70,23 @@ test('switching back to GLM seeds native counters rather than producing cross-mo
  let s=await p._probeOpenAICompatible();assert.equal(s.modelId,'GLM-5.3-Flash-EXL3');assert.equal(s.contextLength,1048576);assert.equal(s.generationTps,null);assert.equal(s.totalOutputTokens,40000);
  completion+=40;p.lastProbeTime=Date.now()-2000;s=await p._probeOpenAICompatible();assert.ok(s.generationTps>19&&s.generationTps<=20);assert.equal(s.slotsTotal,4);
 });
+
+test('native live queue takes precedence over a lagging metrics gauge',async()=>{
+ const p=new LlmProbe({lanIp:'127.0.0.1'},8888);p.serverIsOpenAI=true;
+ p._fetch=async url=>({ok:true,status:200,json:async()=>String(url).endsWith('/v1/models')?{data:[{id:'GLM',owned_by:'tensorfold'}]}:{status:'ok',max_batch_size:4,live:{connections:4,waiting:2,decode_tokens_per_second:10,prefill_tokens_per_second:0}},text:async()=> 'tensorfold:requests_waiting 0'});
+ const s=await p._probeOpenAICompatible();assert.equal(s.requestsWaiting,2);assert.equal(s.requestsWaitingFromHealth,true);
+});
+
+test('native prefill excludes cached tokens and safely rebases inconsistent cache counters',()=>{
+ const p=new LlmProbe({lanIp:'127.0.0.1'},8888);
+ const apply=(prompt,cached)=>p._applyExl3Health({backend:'tensorfold',busy:true,prompt_tokens_total:prompt,completion_tokens_total:50,cached_tokens_total:cached},2);
+ apply(100,80);apply(1100,1030);assert.equal(p.prefillTps,25);
+ apply(2100,2030);assert.equal(p.prefillTps,0);
+ apply(100,10);assert.equal(p.prefillTps,null);
+ apply(200,60);assert.equal(p.prefillTps,25);
+});
+
+test('detection reset clears probe clock so recovery only seeds cumulative counters',()=>{
+ const p=new LlmProbe({lanIp:'127.0.0.1'},8888);p.lastProbeTime=Date.now();
+ p._resetDetection();assert.equal(p.lastProbeTime,0);assert.equal(p._nativeCachedPromptTokens,null);
+});
