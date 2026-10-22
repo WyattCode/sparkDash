@@ -1,3 +1,4 @@
+import { useOverlayClose } from "../hooks/useOverlayClose";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { addSpark, testSparkConfig } from "../api/client";
@@ -41,6 +42,7 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
   const [error, setError] = useState<string | null>(null);
   const [portsText, setPortsText] = useState(String(defaultLlmPort));
   const busy = testing || saving;
+  const overlayClose = useOverlayClose(onClose, open && !busy);
   const parsedPorts = portsText.trim() ? portsText.split(",").map((value) => {
     const text = value.trim();
     return /^\d+$/.test(text) ? Number(text) : NaN;
@@ -143,9 +145,7 @@ export function AddSparkDialog({ open, onClose, onAdded, defaultLlmPort = 8888 }
   return createPortal(
     <div
       className={`modal-overlay${visible ? " is-open" : ""}`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget && !busy) onClose();
-      }}
+      {...overlayClose}
     >
       <div
         ref={trapRef}

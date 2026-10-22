@@ -1,3 +1,5 @@
+import { hasOpenClients, installListenErrorHandler } from './runtimeSafety.js';
+import { registerRoceRoutes } from './roceRoutes.js';
 import express from "express";
 import { assertBenchmarkAdmission } from './taskAdmission.js';
 import { createServer } from "http";
@@ -330,6 +332,7 @@ app.use(express.json());
 app.use(createAuthMiddleware());
 connectivityEvents.register(app);
 registerOperationsRoutes(app, orderedSnapshots, path.join(ROOT, 'config', 'operations-events.json'));
+registerRoceRoutes(app, registry);
 registerVerificationRoutes(app, {snapshots:orderedSnapshots,getSpark:id=>registry.getSpark(id),file:path.join(ROOT,'config','service-verification.json')});
 
 app.get("/api/health", (_req, res) => {
@@ -1587,7 +1590,6 @@ wss.on("connection", (ws) => {
 
 // ─── Broadcast snapshot (dynamic interval) ────────────────
 let broadcastTimer = null;
-let _lastBroadcastPayload = null;
 
 /** Build the snapshot payload string. Centralized so broadcast + refresh share it. */
 function buildSnapshotPayload() {
@@ -1631,19 +1633,16 @@ function broadcastPayload(payload) {
  * UI reflects the result right away instead of on the next poll tick.
  */
 function forceBroadcast() {
+  if (!hasOpenClients(wss.clients)) return;
   const payload = buildSnapshotPayload();
-  _lastBroadcastPayload = payload;
   broadcastPayload(payload);
 }
 
 function startBroadcast() {
   const interval = getSettings().pollIntervalMs;
   broadcastTimer = setInterval(() => {
+    if (!hasOpenClients(wss.clients)) return;
     const payload = buildSnapshotPayload();
-    // Skip the broadcast entirely when nothing changed since the last tick.
-    // A 1s poll that produces identical snapshots becomes free for idle tabs.
-    if (_lastBroadcastPayload !== null && payload === _lastBroadcastPayload) return;
-    _lastBroadcastPayload = payload;
     broadcastPayload(payload);
   }, interval);
 }
@@ -1653,7 +1652,6 @@ function restartBroadcast() {
     clearInterval(broadcastTimer);
     broadcastTimer = null;
   }
-  _lastBroadcastPayload = null; // force a fresh broadcast on the new cadence
   startBroadcast();
 }
 
@@ -1664,6 +1662,7 @@ logStartupPreflight(startupPreflight, BIND_HOST, PORT);
 
 if (!startupPreflight.fatal) {
   startBroadcast();
+  installListenErrorHandler(server, BIND_HOST, PORT, {webSocket:wss});
   server.listen(PORT, BIND_HOST, () => {
     console.log(`[sparkDash] server listening on http://${BIND_HOST}:${PORT}`);
     console.log(`[sparkDash] WebSocket endpoint ws://${BIND_HOST}:${PORT}/ws`);

@@ -1,3 +1,4 @@
+import { useOverlayClose } from "../hooks/useOverlayClose";
 import { useEffect, useId, useState } from "react";
 import { fetchSettings, updateSettings } from "../api/client";
 import type { Settings } from "../api/types";
@@ -59,6 +60,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
   const [error, setError] = useState<string | null>(null);
   const [baseline, setBaseline] = useState<Settings | null>(null);
   const [retry,setRetry]=useState(0);
+  const overlayClose = useOverlayClose(onClose, open && !saving);
 
   useEscape(open&&!saving,onClose);
   const titleId=useId();
@@ -128,9 +130,7 @@ export function SettingsDialog({ open, onClose, onSaved }: SettingsDialogProps) 
       className={`settings-overlay fixed inset-0 z-50 flex justify-center bg-black/55 p-0 sm:p-4${
         visible ? " is-open" : ""
       }`}
-      onClick={(e) => {
-        if (!saving&&e.target === e.currentTarget) onClose();
-      }}
+      {...overlayClose}
     >
       <div ref={trapRef} role="dialog" aria-modal="true" aria-labelledby={titleId} className="settings-panel settings-panel--preferences w-full">
         <h2 id={titleId} className="shrink-0 px-6 pt-6 text-sm font-semibold text-text-strong">设置</h2>

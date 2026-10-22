@@ -1,5 +1,13 @@
 # TensorFold compatibility — 2026-10-10
 
+## 2026-10-22 selected upstream core updates and follow-up review
+
+Selectively adapted upstream 2.70 changes, not a full main merge. Added read-only, on-demand RoCE monitoring to node details; polling stops when collapsed. Missing counters remain unknown, failed cached samples are marked stale, long sampling gaps re-seed rate baselines, counter resets do not become false zero rates, and configuration changes invalidate in-flight reads. No network configuration commands or upstream alert thresholds are enabled.
+
+Also fixed recovery throughput spikes and negative per-slot deltas, added controlled listener failure handling and skipped snapshot serialization without open clients. Shared overlay handling prevents text-selection drags from dismissing five dialogs. Credential writes/deletions now validate existing structure and decryptability before replacement, preserving unknown sections and refusing damaged files rather than silently losing credentials. This does not repair damaged credentials automatically.
+
+Added Apache-2.0 license text and NOTICE for selected upstream modules; the existing MIT license and other-device branding remain unchanged. Production verification passed 466 backend and 263 frontend tests plus type checking; Chrome responsive RoCE/overlay checks and Firefox theme/page checks passed. The sanitized publication independently passed 469 backend tests, the frontend suite, type checking and build (existing bundle-size warning remains). Only the panel was reloaded; no production model inference tests, model restarts, GPU, network or control-center changes. Site configuration, credentials and private operations records are not published. Remaining upstream history/storage and test-configuration features are not included.
+
 ## 2026-10-22 streaming and snapshot bug fixes
 
 This follow-up fixes shared client code, not model deployment parameters:

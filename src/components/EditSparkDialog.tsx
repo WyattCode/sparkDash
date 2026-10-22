@@ -1,3 +1,4 @@
+import { useOverlayClose } from "../hooks/useOverlayClose";
 import { displayName } from '../displayName';
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -71,6 +72,7 @@ function EditSparkSession({
   const portValid = !config?.comfyMonitoring || (/^\d+$/.test(portText) && Number(portText) >= 1 && Number(portText) <= 65535);
   const valid = !!config && !!config.name.trim() && (config.isLocal || !!config.lanIp.trim()) && portValid;
   const close = () => { if (open && !lock.current) onClose(); };
+  const overlayClose = useOverlayClose(close, open && !busy);
 
   useEscape(close);
 
@@ -293,9 +295,7 @@ function EditSparkSession({
   return createPortal(
     <div
       className={`modal-overlay${visible ? " is-open" : ""}`}
-      onClick={(e) => {
-        if (e.target === e.currentTarget) close();
-      }}
+      {...overlayClose}
     >
       <div
         ref={trapRef}

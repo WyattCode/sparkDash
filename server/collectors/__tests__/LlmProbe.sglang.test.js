@@ -856,7 +856,11 @@ function sglangCounterProbe(state) {
   return probe;
 }
 
-test("probe: SGLang prefill tok/s returns to 0 once the engine goes idle (#99)", async () => {
+test("probe: SGLang prefill tok/s returns to 0 once the engine goes idle (#99)", async (t) => {
+  // Exact rate assertions require an exact interval, not a wall-clock read
+  // that can advance 1 ms under parallel test load (199.9 instead of 200).
+  const now = Date.now();
+  t.mock.method(Date, 'now', () => now);
   const state = { prompt: 1000, gen: 500, running: 0 };
   const probe = sglangCounterProbe(state);
 

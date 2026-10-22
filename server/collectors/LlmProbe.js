@@ -293,6 +293,9 @@ export class LlmProbe {
     this.mtpAcceptanceRate = null;
     this.slotState.clear();
     this.lastTokenCounts = { input: 0, output: 0 };
+    // Upstream 8d498be: the first successful poll after a reset only seeds
+    // lifetime counters; it must not become a one-interval throughput spike.
+    this.lastProbeTime = 0;
     this.lastPrefillKinds = null;
     this.lastTtftSum = null;
     this.lastTtftCount = null;
@@ -1540,8 +1543,10 @@ let modelsOk = false;
             const dPrompted = prompted - lastState.prompted;
             this.slotState.set(slotId, { decoded, prompted });
             if (dtSec > 0 && dtSec < 10) {
-              totalGen += dDecoded / dtSec;
-              totalPrefill += dPrompted / dtSec;
+              // Upstream ffe7964: a resetting slot cannot cancel another
+              // slot's real work in the same interval.
+              totalGen += Math.max(0, dDecoded) / dtSec;
+              totalPrefill += Math.max(0, dPrompted) / dtSec;
             }
           }
 

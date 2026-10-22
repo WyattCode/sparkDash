@@ -1,3 +1,4 @@
+import { useOverlayClose } from "../hooks/useOverlayClose";
 import { displayName } from '../displayName';
 import { useEffect, useId, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -41,6 +42,7 @@ export function ConfirmShutdownDialog({
   const [phrase, setPhrase] = useState("");
   const [acknowledged, setAcknowledged] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const overlayClose = useOverlayClose(onClose, open && !submitting);
   const [readiness,setReadiness]=useState<(PowerReadiness & {id:string;name:string})[]|null>(null);
   const [checking,setChecking]=useState(false);
   const [retry,setRetry]=useState(0);
@@ -109,10 +111,7 @@ export function ConfirmShutdownDialog({
   return createPortal(
     <div
       className={`modal-overlay${visible ? " is-open" : ""}`}
-      onClick={(e) => {
-        if (submitting) return;
-        if (e.target === e.currentTarget) onClose();
-      }}
+      {...overlayClose}
     >
       <div
         ref={trapRef}

@@ -10,6 +10,7 @@ import { gpuReady } from "../OverviewPage/operationsModel";
 import { RamPanel } from "./RamPanel";
 import { StoragePanel } from "./StoragePanel";
 import { NetworkPanel } from "./NetworkPanel";
+import { RocePanel } from "./RocePanel";
 import { TailscalePanel } from "./TailscalePanel";
 import { LlmPanel } from "./LlmPanel";
 import { ComfyPanel } from "./ComfyPanel";
@@ -323,6 +324,7 @@ export function SparkPage({
             )}
           </>
         )}
+        {resourcesOpen && <RocePanel key={spark.id} sparkId={spark.id} online={spark.online}/>}
         {/*
           Services layout:
           - Primary LLM + ComfyUI → always same row, 2 columns (when both on)
