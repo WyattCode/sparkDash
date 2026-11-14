@@ -93,7 +93,7 @@ function ProgressBar({ progress }: { progress: ComfyProgress }) {
         : 0;
   const label =
     progress.nodeLabel ||
-    (progress.source === "estimate" ? "Elapsed (est.)" : "Progress");
+    (progress.source === "estimate" ? "已用时间（估算）" : "进度");
   const detail =
     progress.max > 0 && progress.source === "ws"
       ? `${Math.round(progress.value)}/${Math.round(progress.max)}`
@@ -107,14 +107,14 @@ function ProgressBar({ progress }: { progress: ComfyProgress }) {
         <span className="truncate text-muted" title={label}>
           {label}
           {progress.source === "estimate" ? (
-            <span className="ml-1 text-[10px] opacity-70">est.</span>
+            <span className="ml-1 text-[10px] opacity-70">估算</span>
           ) : null}
         </span>
         {detail ? <span className="font-tabular text-text">{detail}</span> : null}
       </div>
       <div className="h-1.5 overflow-hidden rounded-full bg-border">
         <div
-          className="h-full rounded-full bg-accent transition-[width] duration-300"
+          className="telemetry-progress-fill h-full rounded-full bg-accent transition-[width] duration-300"
           style={{ width: `${Math.min(100, Math.max(0, pct))}%` }}
         />
       </div>
@@ -156,14 +156,14 @@ function JobBlock({
                   variant === "running" ? "bg-accent" : "bg-muted"
                 }`}
               />
-              {variant === "running" ? "Running" : "Queued"}
+              {variant === "running" ? "运行中" : "排队中"}
             </span>
             {elapsed ? (
               <span className="font-tabular text-[11px] text-muted">{elapsed}</span>
             ) : null}
             {etaLabel ? (
-              <span className="font-tabular text-[11px] text-muted" title="Estimated time remaining">
-                {etaLabel} left
+              <span className="font-tabular text-[11px] text-muted" title="预计剩余时间">
+                {etaLabel} 剩余
               </span>
             ) : null}
           </div>
@@ -178,7 +178,7 @@ function JobBlock({
             disabled={cancelling}
             className="shrink-0 rounded border border-border px-2 py-0.5 text-[11px] text-muted transition-colors hover:border-danger hover:text-danger disabled:opacity-50"
           >
-            {cancelling ? "…" : variant === "running" ? "Cancel" : "Remove"}
+            {cancelling ? "…" : variant === "running" ? "取消" : "移除"}
           </button>
         ) : null}
       </div>
@@ -186,14 +186,14 @@ function JobBlock({
       {variant === "running" && progress ? <ProgressBar progress={progress} /> : null}
 
       {footprint ? (
-        <p className="font-tabular text-[11px] text-muted" title="Workflow compute footprint">
+        <p className="font-tabular text-[11px] text-muted" title="工作流计算规模">
           {footprint}
         </p>
       ) : null}
 
       {models.length > 0 ? (
         <div className="space-y-1">
-          <div className="text-[10px] uppercase tracking-wide text-muted">Models</div>
+          <div className="text-[10px] uppercase tracking-wide text-muted">模型</div>
           <ul className="space-y-0.5">
             {models.slice(0, 6).map((m) => (
               <li key={m} className="truncate font-tabular text-[12px] text-text" title={m}>
@@ -201,7 +201,7 @@ function JobBlock({
               </li>
             ))}
             {models.length > 6 ? (
-              <li className="text-[11px] text-muted">+{models.length - 6} more</li>
+              <li className="text-[11px] text-muted">+{models.length - 6} 更多</li>
             ) : null}
           </ul>
         </div>
@@ -235,7 +235,7 @@ export function ComfyPanel({
     (e: MouseEvent) => {
       e.preventDefault();
       e.stopPropagation();
-      // Force a real top-level navigation off the sparkDash SPA origin.
+      // Force a real top-level navigation off the SparkDash SPA origin.
       window.open(openUrl, "_blank", "noopener,noreferrer");
     },
     [openUrl]
@@ -243,7 +243,7 @@ export function ComfyPanel({
 
   const handleCancel = useCallback(
     async (promptId: string) => {
-      if (!confirm("Cancel this ComfyUI job?")) return;
+      if (!confirm("确认取消此 ComfyUI 任务？")) return;
       setActionError(null);
       setCancellingId(promptId);
       try {
@@ -266,7 +266,7 @@ export function ComfyPanel({
       accent
       actions={
         <div className="flex items-center gap-2">
-          <span className="font-tabular text-[11px] text-muted" title="Probe port">
+          <span className="font-tabular text-[11px] text-muted" title="探测端口">
             :{comfyPort}
           </span>
           <a
@@ -274,23 +274,23 @@ export function ComfyPanel({
             target="_blank"
             rel="noopener noreferrer"
             onClick={handleOpenComfy}
-            title={`Open ComfyUI at ${openUrl} (must be reachable from your browser)`}
+            title={`在 ${openUrl} 打开 ComfyUI（需浏览器可直接访问）`}
             className="inline-flex items-center gap-1 rounded border border-border px-1.5 py-0.5 text-[11px] text-muted transition-colors hover:border-accent hover:text-accent"
           >
             <ExternalLinkIcon className="h-3 w-3" />
-            Open
+            打开
           </a>
         </div>
       }
     >
       {!available ? (
         <div className="space-y-1 text-sm">
-          <p className="text-muted">Not reachable</p>
+          <p className="text-muted">无法访问</p>
           {comfy?.error ? (
             <p className="break-all text-[11px] text-muted">{comfy.error}</p>
           ) : (
             <p className="text-[11px] text-muted">
-              Ensure ComfyUI is running on this host (default port 8188).
+              请确认此主机上的 ComfyUI 正在运行（默认端口 8188）。
             </p>
           )}
         </div>
@@ -299,20 +299,20 @@ export function ComfyPanel({
           <div className="flex flex-wrap items-center gap-2 text-xs">
             <span className="llm-badge">
               <span className="h-1.5 w-1.5 rounded-full bg-accent" />
-              Online
+              在线
             </span>
             {comfy?.version ? (
-              <span className="text-muted" title="ComfyUI version">
+              <span className="text-muted" title="ComfyUI 版本">
                 v{comfy.version}
               </span>
             ) : null}
             {comfy?.deviceType ? (
-              <span className="text-muted" title="ComfyUI compute device">
+              <span className="text-muted" title="ComfyUI 计算设备">
                 {comfy.deviceType}
               </span>
             ) : null}
             {comfy?.pytorchVersion ? (
-              <span className="text-muted" title="PyTorch version">
+              <span className="text-muted" title="PyTorch 版本">
                 torch {comfy.pytorchVersion}
               </span>
             ) : null}
@@ -334,7 +334,7 @@ export function ComfyPanel({
           ) : (
             <div className="space-y-2">
               <div className="rounded-md border border-dashed border-border px-3 py-3 text-sm text-muted">
-                Idle — no running job
+                空闲，暂无运行任务
               </div>
               {lastJob ? (
                 <p
@@ -346,7 +346,7 @@ export function ComfyPanel({
                         : "text-muted"
                   }`}
                 >
-                  Last:{" "}
+                  上次：{" "}
                   <span className="text-text">
                     {lastJob.title?.trim() || shortId(lastJob.id)}
                   </span>
@@ -362,9 +362,9 @@ export function ComfyPanel({
           {pending > 0 ? (
             <div className="space-y-2">
               <div className="flex items-baseline justify-between gap-2 text-[10px] uppercase tracking-wide text-muted">
-                <span>Queue</span>
+                <span>队列</span>
                 <span className="font-tabular normal-case text-muted">
-                  {pending} pending
+                  {pending} 等待中
                   {etaLabel ? ` · ${etaLabel}` : ""}
                 </span>
               </div>
@@ -379,7 +379,7 @@ export function ComfyPanel({
               ))}
               {pending > Math.min(2, pendingJobs.length) ? (
                 <p className="text-[11px] text-muted">
-                  +{pending - Math.min(2, pendingJobs.length)} more waiting
+                  +{pending - Math.min(2, pendingJobs.length)} 项等待中
                 </p>
               ) : null}
             </div>
@@ -387,7 +387,7 @@ export function ComfyPanel({
 
           {active && lastJob ? (
             <p className="text-[11px] text-muted">
-              Last: {lastJob.title?.trim() || shortId(lastJob.id)}
+              上次： {lastJob.title?.trim() || shortId(lastJob.id)}
               {formatDurationMs(lastJob.durationMs)
                 ? ` · ${formatDurationMs(lastJob.durationMs)}`
                 : ""}
@@ -404,17 +404,17 @@ export function ComfyPanel({
                 className="flex w-full items-center justify-between text-left text-[11px] text-muted hover:text-text"
               >
                 <span>
-                  Installed: {modelsInstalled.checkpoints.length} checkpoints ·{" "}
+                  已安装： {modelsInstalled.checkpoints.length} 检查点 ·{" "}
                   {modelsInstalled.loras.length} loras
                 </span>
-                <span className="text-[10px]">{modelsOpen ? "Hide" : "Show"}</span>
+                <span className="text-[10px]">{modelsOpen ? "隐藏" : "显示"}</span>
               </button>
               {modelsOpen ? (
                 <div className="mt-1.5 grid gap-2 sm:grid-cols-2">
                   {modelsInstalled.checkpoints.length > 0 ? (
                     <div>
                       <div className="text-[10px] uppercase tracking-wide text-muted">
-                        Checkpoints
+                        模型检查点
                       </div>
                       <ul className="mt-0.5 space-y-0.5">
                         {modelsInstalled.checkpoints.slice(0, 12).map((m) => (

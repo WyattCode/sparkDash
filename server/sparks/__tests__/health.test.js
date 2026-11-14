@@ -22,6 +22,8 @@ test("remote bind without a token is healthy by default", () => {
   try {
     const health = evaluateHealth({ bindHost: "0.0.0.0", configWritable: true, secretsKeyPresent: true, sshIdentityPresent: true });
     assert.equal(health.ok, true);
+    assert.equal(health.authMode, 'remote-open');
+    assert.match(health.warnings.join(' '), /trusted network/);
   } finally {
     if (previousToken != null) process.env.SPARKDASH_TOKEN = previousToken;
     else delete process.env.SPARKDASH_TOKEN;

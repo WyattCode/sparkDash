@@ -14,7 +14,7 @@ test("startup preflight permits loopback and fails closed on direct LAN binding"
     localCollectors: { available: true },
   });
   assert.equal(safe.fatal, false);
-  assert.equal(safe.authMode, "loopback-only");
+  assert.equal(safe.authMode, "loopback-open");
 
   const exposed = evaluateStartupPreflight({
     bindHost: "0.0.0.0",

@@ -8,18 +8,18 @@ export type ShowcasePromptType = "structural" | "text" | "mixed";
 export const PROMPT_TYPES: { id: ShowcasePromptType; label: string; hint: string }[] = [
   {
     id: "text",
-    label: "Text",
-    hint: "Prose / narrative — no code or structured formats",
+    label: "文本",
+    hint: "文章与叙事，不包含代码或结构化格式",
   },
   {
     id: "structural",
-    label: "Structural",
-    hint: "JSON, HTML, YAML, SQL, schemas, tables, logs",
+    label: "结构化",
+    hint: "JSON、HTML、YAML、SQL、结构定义、表格和日志",
   },
   {
     id: "mixed",
-    label: "Mixed",
-    hint: "Half structural, half text — interleaved",
+    label: "混合",
+    hint: "结构化与文本各半，交错排列",
   },
 ];
 

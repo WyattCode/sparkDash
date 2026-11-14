@@ -11,6 +11,10 @@ config/prefill-bench-active.json
 config/showcase-history.json
 config/llm-daily.json
 config/fleet-energy.json
+config/operations-events.json
+config/operations-events.json.tmp
+config/service-verification.json
+config/service-verification.json.tmp
 config/.fleet-energy.json.*.tmp
 config/gpu-memory.json
 config/gpu-memory.json.*
@@ -28,3 +32,23 @@ HANDOFF.md
 HANDOFF-HERMES.md
 handoff.md
 test/
+
+# Runtime connectivity logs and local restore backups
+config/connectivity-events.jsonl
+.dist-backup-*/
+
+# Private runtime history; never publish model/usage data or credentials.
+config/connectivity-events.jsonl.*
+config/llm-token-totals.json*
+config/native-metric-history.json*
+.node_modules-backup*/
+.node_modules-next*/
+
+config/connectivity-events.jsonl.*
+config/llm-token-totals.json
+config/llm-token-totals.json.*.tmp
+config/fleet-energy.scope-*.json
+config/connectivity-events.jsonl*
+config/sparks.json.*
+config/sparks.json.new
+deploy/OPERATIONS-HANDOFF-*.md

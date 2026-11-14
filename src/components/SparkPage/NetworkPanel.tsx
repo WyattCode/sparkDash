@@ -76,14 +76,14 @@ export function NetworkPanel({
 
   return (
     <Panel
-      title="Network"
+      title="网络"
       accent
       icon={<NetworkIcon />}
       className="panel-network"
       actions={
         <button
           type="button"
-          title={showSettings ? "Done" : "Interface settings"}
+          title={showSettings ? "完成" : "网络接口设置"}
           onClick={() => setShowSettings(!showSettings)}
           disabled={saving}
           className={`flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] text-muted transition-colors hover:bg-surface-hover disabled:opacity-50 ${
@@ -91,15 +91,15 @@ export function NetworkPanel({
           }`}
         >
           <GearIcon />
-          <span>{showSettings ? "Done" : "Settings"}</span>
+          <span>{showSettings ? "完成" : "设置"}</span>
         </button>
       }
     >
       {showSettings ? (
         <div className="space-y-2">
-          <p className="mb-1 text-[10px] text-muted">Toggle adapters to monitor:</p>
+          <p className="mb-1 text-[10px] text-muted">选择要监控的网卡：</p>
           {interfaces.length === 0 ? (
-            <p className="text-xs text-muted">No interfaces discovered</p>
+            <p className="text-xs text-muted">未发现网络接口</p>
           ) : (
             interfaces.map((iface) => {
               const isDisabled =
@@ -113,7 +113,7 @@ export function NetworkPanel({
                     <span className="truncate text-xs text-text">{iface.name}</span>
                     {primary === iface.name && (
                       <span className="shrink-0 rounded bg-accent-soft px-1 text-[9px] font-medium uppercase tracking-wide text-accent">
-                        primary
+                        主要
                       </span>
                     )}
                   </div>
@@ -127,7 +127,7 @@ export function NetworkPanel({
         <>
           {primaryVisible && (
             <div className="mb-3 flex items-center gap-2 text-xs">
-              <span className="text-muted">Primary</span>
+              <span className="text-muted">主要</span>
               <span className="font-tabular text-text-strong">{primaryVisible}</span>
               {linkSpeed != null && (
                 <span className="ml-auto chip py-0.5">{linkSpeed} Mbps</span>
@@ -137,7 +137,7 @@ export function NetworkPanel({
           <div className="space-y-2">
             {visible.length === 0 ? (
               <p className="text-xs text-muted">
-                {interfaces.length === 0 ? "No interfaces" : "All adapters hidden — open settings"}
+                {interfaces.length === 0 ? "暂无网络接口" : "所有网卡均已隐藏 — 请打开设置"}
               </p>
             ) : (
               visible.map((iface) => {
@@ -147,7 +147,7 @@ export function NetworkPanel({
                     key={iface.name}
                     className={`flex flex-col gap-0.5 sm:flex-row sm:items-center sm:justify-between rounded-md border px-3 py-2 ${
                       isPrimary
-                        ? "border-accent/40 bg-accent-soft"
+                        ? "border-border-strong bg-surface-elevated"
                         : "border-border bg-surface-elevated"
                     }`}
                   >
@@ -157,11 +157,12 @@ export function NetworkPanel({
                       ) : (
                         <span className="truncate">{iface.name}</span>
                       )}
+                      {isPrimary && <span className="metadata-tag rounded px-1 text-[10px]">主网卡</span>}
                     </span>
                     <span className="font-tabular text-xs text-text">
-                      <span className="text-accent">↑</span> {formatSpeed(iface.txSpeed)}
+                      <span className="text-muted">↑</span> {formatSpeed(iface.txSpeed)}
                       <span className="mx-1.5 text-border">·</span>
-                      <span className="text-accent">↓</span> {formatSpeed(iface.rxSpeed)}
+                      <span className="text-muted">↓</span> {formatSpeed(iface.rxSpeed)}
                     </span>
                   </div>
                 );

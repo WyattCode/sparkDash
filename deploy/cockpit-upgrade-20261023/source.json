@@ -1,0 +1,11 @@
+{
+  "reference_url": "http://192.168.10.233:5555/",
+  "reference_git_head": "6dd6a58",
+  "reference_worktree": "running, includes uncommitted files",
+  "reference_source_archive_sha256": "57fb7c6acd37076713c6fbeed748089c2b4714f14113fde40a96a7e85f347319",
+  "reference_frontend_sha256": "8f81a35de85474ba2376b8428dc149f092932b98c893d6b5321500d2d8c978da",
+  "base_commit": "36ec6ed",
+  "source_complete": true,
+  "node_config_source": "local config retained; no neighbor runtime configuration imported",
+  "created_utc": "2026-10-22T16:54:17.952364+00:00"
+}

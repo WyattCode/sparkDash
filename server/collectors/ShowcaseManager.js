@@ -158,7 +158,9 @@ function historySummary(record) {
 }
 
 export class ShowcaseManager {
-  constructor(historyPath = HISTORY_PATH) {
+  constructor(historyPath = HISTORY_PATH, {streamRequest = runStreamingRequest, ratePoll = pollServerGenerationRates} = {}) {
+    this._streamRequest = streamRequest;
+    this._ratePoll = ratePoll;
     /** @type {Map<string, object>} sessionId → live session */
     this.sessions = new Map();
     /** @type {Map<string, string>} sparkId → active sessionId */
@@ -276,8 +278,8 @@ export class ShowcaseManager {
     const id = this.activeBySpark.get(sparkId);
     if (!id) return null;
     const session = this.sessions.get(id);
-    if (!session || session.status !== "running") return null;
-    return { sessionId: session.sessionId, status: session.status };
+    if (!session) return null;
+    return { sessionId: session.sessionId, status: session.status === 'cancelled' ? 'cancelling' : session.status };
   }
 
   touch(sparkId, sessionId) {
@@ -431,8 +433,7 @@ export class ShowcaseManager {
       _contentCap: cap,
       _lanIp: lanIp,
       _apiKey: apiKey != null && String(apiKey).trim() ? String(apiKey).trim() : null,
-      _sentContentLengths: /** @type {number[]} */ (prompts.map(() => 0)),
-      _sentReasoningLengths: /** @type {number[]} */ (prompts.map(() => 0)),
+      _snapshotOffsets: new Map(),
     };
 
     this.sessions.set(sessionId, session);
@@ -476,18 +477,20 @@ export class ShowcaseManager {
       since != null && Number.isFinite(Number(since))
         ? Math.max(0, Math.floor(Number(since)))
         : null;
-    const fullSnapshot = sinceRev == null;
+    // Deltas are based on the client's acknowledged revision, never on the
+    // last response sent. Missing/evicted revisions safely receive full text.
+    session._snapshotOffsets ||= new Map();
+    const offsets = sinceRev == null ? null : session._snapshotOffsets.get(sinceRev);
+    const fullSnapshot = !offsets;
 
     const streams = session.streams.map((s, i) => {
       const content = s.content || "";
       const reasoning = s.reasoning || "";
-      const sentContent = fullSnapshot ? 0 : (session._sentContentLengths[i] ?? 0);
-      const sentReasoning = fullSnapshot ? 0 : (session._sentReasoningLengths[i] ?? 0);
+      const sentContent = offsets?.[i]?.content ?? 0;
+      const sentReasoning = offsets?.[i]?.reasoning ?? 0;
       const resetContent =
         !fullSnapshot && (sentContent > content.length || sentReasoning > reasoning.length);
 
-      session._sentContentLengths[i] = content.length;
-      session._sentReasoningLengths[i] = reasoning.length;
 
       /** @type {Record<string, unknown>} */
       const out = {
@@ -520,6 +523,8 @@ export class ShowcaseManager {
       return out;
     });
 
+    session._snapshotOffsets.set(session.rev, session.streams.map(s => ({content: (s.content || '').length, reasoning: (s.reasoning || '').length})));
+    while (session._snapshotOffsets.size > 64) session._snapshotOffsets.delete(session._snapshotOffsets.keys().next().value);
     return {
       sessionId: session.sessionId,
       sparkId: session.sparkId,
@@ -569,7 +574,7 @@ export class ShowcaseManager {
     session.error = reason;
     session.completedAt = Date.now();
     this._bumpRev(session);
-    this.activeBySpark.delete(sparkId);
+    // Keep the node occupied until all aborted requests have actually settled.
     this._archiveSession(session);
     return this.getSession(sparkId, sessionId);
   }
@@ -658,7 +663,7 @@ export class ShowcaseManager {
     if (session._abort.signal.aborted) onParentForPoll();
     else session._abort.signal.addEventListener("abort", onParentForPoll, { once: true });
 
-    const ratePollPromise = pollServerGenerationRates(
+    const ratePollPromise = this._ratePoll(
       baseUrl,
       ratePollAbort.signal,
       400,
@@ -672,7 +677,7 @@ export class ShowcaseManager {
           this._bumpRev(session);
         },
       }
-    );
+    ).catch(() => ({median:null,max:null,samples:0}));
 
     const promises = session.streams.map((stream) => {
       const ctrl = new AbortController();
@@ -707,7 +712,7 @@ export class ShowcaseManager {
 
       const timeout = setTimeout(() => ctrl.abort(), PER_REQUEST_TIMEOUT_MS);
 
-      return runStreamingRequest(url, body, ctrl.signal, {
+      return this._streamRequest(url, body, ctrl.signal, {
         collectContent: true,
         retryOnThinking400: true,
         thinking: session.thinking,
@@ -726,11 +731,11 @@ export class ShowcaseManager {
           // Non-vLLM OpenAI-compat servers may 400 on min_tokens / ignore_eos.
           // Retry once without those fields rather than failing the whole stream.
           if (
-            result.error &&
+            !session._abort.signal.aborted && result.error &&
             /^HTTP 400\b/.test(result.error) &&
             (body.min_tokens != null || body.ignore_eos != null)
           ) {
-            result = await runStreamingRequest(
+            result = await this._streamRequest(
               url,
               stripFillForceFields(body),
               ctrl.signal,
@@ -752,7 +757,7 @@ export class ShowcaseManager {
             );
           }
 
-          if (session._abort.signal.aborted && stream.status === "streaming") {
+          if (session._abort.signal.aborted) {
             stream.status = "cancelled";
             stream.error = stream.error || "Cancelled";
           } else if (result.error) {
@@ -823,7 +828,9 @@ export class ShowcaseManager {
       if (session.status === "running") {
         this._finalizeSession(session);
       }
-      this.activeBySpark.delete(session.sparkId);
+      if (this.activeBySpark.get(session.sparkId) === session.sessionId) {
+        this.activeBySpark.delete(session.sparkId);
+      }
       session.completedAt = session.completedAt ?? Date.now();
       // Archive once when the run settles (cancel may already have archived)
       if (session.status !== "running") {

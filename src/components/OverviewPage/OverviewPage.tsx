@@ -1,14 +1,26 @@
-import { useEffect, useState } from "react";
+import { displayName } from '../../displayName';
+import { useEffect, useState, type ReactNode } from "react";
 import type { SparkSnapshot } from "../../api/types";
 import { isWorkerSpark, resolveSparkRole } from "../../api/sparkRole";
 import { shutdownAllSparks, updateAllHermes, wakeAllSparks } from "../../api/client";
 import { ConfirmShutdownDialog } from "../ConfirmShutdownDialog";
-import { MetricBar } from "../ui/MetricBar";
 import { FleetEnergyCard } from "./FleetEnergyCard";
 import { FleetAlertStrip } from "./FleetAlertStrip";
 import { ActivityIcon, PowerOffIcon, PowerOnIcon, RotateIcon } from "../ui/icons";
+import { OperationsPanel } from './OperationsPanel';
+import { finite, gpuReady, nodeIssues, type Operations } from './operationsModel';
+import { temperatureColor } from './temperatureColor';
+import { SparkHero } from './SparkHero';
+import { CockpitNodeCard } from './CockpitNodeCard';
+import { TokenLedgerCard } from './TokenLedgerCard';
+import { openWorkspace, type Workspace } from '../../hooks/useWorkspaceRoute';
+import { TestTools } from './TestTools';
 
 interface OverviewPageProps {
+  nodeControls?: ReactNode;
+  workspace?: Workspace;
+  benchShareImage?: boolean;
+  telemetryStale?: boolean;
   sparks: SparkSnapshot[];
   hideOffline?: boolean;
   hideWorkers?: boolean;
@@ -28,370 +40,56 @@ function formatMb(mb: number): string {
   return `${Math.round(mb)} MB`;
 }
 
-/** Format a storage value in MB, stripping trailing ".0" and optionally omitting the unit. */
-function fmtStorage(mb: number, unit: boolean): string {
-  const val = mb >= 1024 ? mb / 1024 : mb;
-  const label = mb >= 1024 ? "GB" : "MB";
-  const s = val.toFixed(1).replace(/\.0$/, "");
-  return unit ? `${s} ${label}` : s;
-}
 
-function MiniStat({
-  label,
-  value,
-  tone = "default",
-  bold = true,
+function ComparisonMetric({
   title,
-  wrap = false,
+  sparks,
+  value,
+  max,
+  format,
+  color,
 }: {
-  label: string;
-  value: string;
-  tone?: "default" | "accent" | "warning" | "danger" | "success";
-  bold?: boolean;
-  title?: string;
-  /** Allow value to wrap (no ellipsis trim) — used for long model ids. */
-  wrap?: boolean;
+  title: string;
+  sparks: SparkSnapshot[];
+  value: (spark: SparkSnapshot) => number | null;
+  max: number;
+  format: (value: number) => string;
+  color?: (value: number, spark: SparkSnapshot) => string;
 }) {
-  const toneClass =
-    tone === "danger"
-      ? "text-danger"
-      : tone === "warning"
-        ? "text-warning"
-        : tone === "accent"
-          ? "text-accent"
-          : tone === "success"
-            ? "text-success"
-            : "text-text";
   return (
-    <div className="flex min-w-0 flex-col gap-0.5">
-      <span className="text-[10px] tracking-wide text-muted">{label}</span>
-      <span
-        className={`font-tabular text-[13px] ${
-          wrap
-            ? "whitespace-normal break-words leading-snug [overflow-wrap:anywhere]"
-            : "truncate"
-        } ${bold ? "font-semibold" : ""} ${toneClass}`}
-        title={title}
-      >
-        {value}
-      </span>
-    </div>
-  );
-}
-
-function SparkCard({
-  spark,
-  headSparkName,
-  temperatureUnit,
-  onSelect,
-}: {
-  spark: SparkSnapshot;
-  headSparkName?: string | null;
-  temperatureUnit: "celsius" | "fahrenheit";
-  onSelect?: (id: string) => void;
-}) {
-  const gpu = spark.metrics.gpu;
-  const um = spark.metrics.unifiedMemory;
-  const online = spark.online;
-
-  const usage = gpu?.usage ?? 0;
-  const tempRaw = gpu?.temperature ?? 0;
-  const displayTemp = temperatureUnit === "fahrenheit" ? celsiusToFahrenheit(tempRaw) : tempRaw;
-  const tempLabel = temperatureUnit === "fahrenheit" ? `${displayTemp}°F` : `${displayTemp}°C`;
-  const vramPct = gpu?.vram?.percentage ?? um?.percentage ?? 0;
-  const vramUsed = gpu?.vram?.used ?? um?.used ?? 0;
-  const vramTotal = gpu?.vram?.total ?? um?.total ?? 0;
-  const vramAvail = gpu?.vram?.available ?? um?.available ?? 0;
-
-  // Temperature bar: cool → success, warm → warning, hot → danger
-  const tempBarColor =
-    tempRaw > 85 ? "bg-danger" : tempRaw > 65 ? "bg-warning" : tempRaw > 40 ? "bg-accent" : "bg-success";
-  // Usage bar: accent for moderate, warning high, danger critical
-  const usageBarColor = usage > 85 ? "bg-danger" : usage > 60 ? "bg-warning" : "bg-accent";
-  // VRAM allocation: accent normal → warning/danger as it fills
-  const vramBarColor = vramPct > 85 ? "bg-danger" : vramPct > 60 ? "bg-warning" : "bg-accent";
-
-  return (
-    <div
-      className="overview-card flex flex-col"
-      style={{
-        padding: "var(--density-card-pad)",
-        gap: "var(--density-card-gap)",
-        ...(online ? {} : { opacity: 0.6 }),
-      }}
-    >
-      {/* Card header */}
-      <div className="flex items-center gap-2.5">
-        <span
-          className={`h-2 w-2 shrink-0 rounded-full ${online ? "bg-success dot-glow-success" : "bg-danger"}`}
-        />
-        <span className="min-w-0 flex-1 truncate text-[15px] font-semibold text-text-strong">
-          {onSelect ? (
-            <button
-              type="button"
-              onClick={() => onSelect(spark.id)}
-              className="text-left font-inherit text-inherit hover:underline"
-            >
-              {spark.name}
-            </button>
-          ) : (
-            spark.name
-          )}
-        </span>
-        {(() => {
-          const role = resolveSparkRole(spark);
-          const text =
-            role === "head" ? "Head" : role === "worker" ? "Worker" : "Standalone";
-          const title =
-            role === "head"
-              ? "Cluster head Spark"
-              : role === "worker"
-                ? spark.workerLabel?.trim()
-                  ? `${spark.workerLabel.trim()} · distributed LLM worker`
-                  : "Distributed LLM worker"
-                : spark.llmMonitoring === false
-                  ? "Standalone — LLM monitoring off"
-                  : "Standalone Spark";
+    <section className="comparison-metric">
+      <h3>{title}</h3>
+      <div className="comparison-metric__rows">
+        {sparks.map((spark) => {
+          const current = gpuReady(spark) ? value(spark) : null;
+          const tone = current != null ? color?.(current, spark) : undefined;
+          const width = Math.max(0, Math.min(100, max > 0 && current != null ? (current / max) * 100 : 0));
           return (
-            <span
-              className="shrink-0 rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide text-accent"
-              title={title}
-            >
-              {text}
-            </span>
+            <div className="comparison-metric__row" key={spark.id}>
+              <div className="comparison-metric__label">
+                <span>{displayName(spark.name)}</span>
+                <strong className="font-tabular">{current == null ? (spark.online ? '未采集' : '离线') : format(current)}</strong>
+              </div>
+              <div className="comparison-metric__track">
+                <span
+                  data-unavailable={current == null}
+                  className={spark.role === 'worker' || spark.workerNode ? "is-worker" : "is-head"}
+                  style={{ width: `${width}%`, ...(tone ? { background: `var(--color-${tone === 'bg-danger' ? 'danger' : tone === 'bg-warning' ? 'warning' : tone === 'bg-neutral' ? 'text' : spark.role === 'worker' || spark.workerNode ? 'chart-secondary' : 'chart-primary'})` } : {}) }}
+                />
+              </div>
+            </div>
           );
-        })()}
-        {spark.comfyMonitoring ? (
-          <span
-            className={`shrink-0 rounded px-1.5 py-0.5 text-[10px] font-medium uppercase tracking-wide ${
-              !spark.metrics?.comfy?.available
-                ? "bg-border/60 text-muted"
-                : (spark.metrics.comfy.queueRunning ?? 0) > 0
-                  ? "bg-accent/15 text-accent"
-                  : (spark.metrics.comfy.queuePending ?? 0) > 0
-                    ? "bg-warning/15 text-warning"
-                    : "bg-border/60 text-muted"
-            }`}
-            title={
-              !spark.metrics?.comfy?.available
-                ? "ComfyUI monitoring on — not reachable"
-                : (spark.metrics.comfy.queueRunning ?? 0) > 0
-                  ? spark.metrics.comfy.activeJob?.title
-                    ? `ComfyUI running: ${spark.metrics.comfy.activeJob.title}`
-                    : "ComfyUI job running"
-                  : (spark.metrics.comfy.queuePending ?? 0) > 0
-                    ? `ComfyUI queue: ${spark.metrics.comfy.queuePending} pending`
-                    : "ComfyUI idle"
-            }
-          >
-            {!spark.metrics?.comfy?.available
-              ? "Comfy"
-              : (spark.metrics.comfy.queueRunning ?? 0) > 0
-                ? "Comfy · run"
-                : (spark.metrics.comfy.queuePending ?? 0) > 0
-                  ? `Comfy · ${spark.metrics.comfy.queuePending}q`
-                  : "Comfy · idle"}
-          </span>
-        ) : null}
-        <span className="text-[10px] uppercase tracking-wide text-muted">
-          {online ? "online" : "offline"}
-        </span>
+        })}
       </div>
-
-      {!online || !gpu ? (
-        <div className="flex h-[120px] items-center justify-center">
-          <span className="text-[13px] text-muted">
-            {online ? "Waiting for metrics…" : "Host unreachable"}
-          </span>
-        </div>
-      ) : (
-        <>
-          {/* Three headline bars: GPU alloc, Temp, Usage */}
-          <div className="flex flex-col gap-3.5">
-            <MetricBar
-              label="VRAM"
-              value={vramUsed}
-              max={vramTotal}
-              color={vramBarColor}
-              caption={vramTotal > 0 ? `${fmtStorage(vramUsed, false)} / ${fmtStorage(vramTotal, true)}` : "—"}
-            />
-            {spark.kind === "host" && (() => {
-              // Non-Spark hosts: system RAM is separate from discrete VRAM.
-              const ram = spark.metrics.ram;
-              const rUsed = ram?.used ?? 0;
-              const rTotal = ram?.total ?? 0;
-              const rPct = rTotal > 0 ? Math.round((rUsed / rTotal) * 100) : 0;
-              const ramBarColor = rPct > 85 ? "bg-danger" : rPct > 60 ? "bg-warning" : "bg-accent";
-              return (
-                <MetricBar
-                  label="RAM"
-                  value={rUsed}
-                  max={rTotal}
-                  color={ramBarColor}
-                  caption={rTotal > 0 ? `${fmtStorage(rUsed, false)} / ${fmtStorage(rTotal, true)}` : "—"}
-                />
-              );
-            })()}
-            <MetricBar
-              label={
-                spark.kind === "host" || (spark.metrics.cpu?.temperature ?? 0) > 0
-                  ? "GPU"
-                  : "Temperature"
-              }
-              value={displayTemp}
-              max={temperatureUnit === "fahrenheit" ? 212 : 100}
-              color={tempBarColor}
-              caption={tempLabel}
-            />
-            {(spark.metrics.cpu?.temperature ?? 0) > 0 && (() => {
-              const cpuRaw = spark.metrics.cpu?.temperature ?? 0;
-              const cpuDisplay =
-                temperatureUnit === "fahrenheit" ? celsiusToFahrenheit(cpuRaw) : cpuRaw;
-              const cpuLabel =
-                temperatureUnit === "fahrenheit" ? `${cpuDisplay}°F` : `${cpuDisplay}°C`;
-              const cpuBarColor =
-                cpuRaw > 95 ? "bg-danger" : cpuRaw > 85 ? "bg-warning" : cpuRaw > 50 ? "bg-accent" : "bg-success";
-              return (
-                <MetricBar
-                  label="CPU"
-                  value={cpuDisplay}
-                  max={temperatureUnit === "fahrenheit" ? 212 : 100}
-                  color={cpuBarColor}
-                  caption={cpuLabel}
-                />
-              );
-            })()}
-            {gpu?.throttle?.thermal && (
-              <div
-                className="rounded border border-danger/40 bg-danger/10 px-2 py-1 text-[11px] font-medium text-danger"
-                title={gpu.throttle.detail || "GPU thermal slowdown engaged"}
-              >
-                Thermal throttle
-              </div>
-            )}
-            <MetricBar
-              label="Usage"
-              value={usage}
-              max={100}
-              color={usageBarColor}
-              caption={`${usage}%`}
-            />
-          </div>
-
-          {/* Secondary stats */}
-          <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2.5 border-t border-border pt-3.5">
-            <MiniStat
-              label="GPU Power"
-              value={`${gpu?.power?.draw ?? 0}W / ${gpu?.power?.limit ?? 0}W`}
-            />
-            {vramAvail > 0 && (
-              <MiniStat
-                label="Available"
-                value={formatMb(vramAvail)}
-                tone={vramAvail < 4096 ? "danger" : vramAvail < 16384 ? "warning" : "accent"}
-              />
-            )}
-            {(() => {
-              // Find the root disk by label "/" (the collector maps the host
-              // root mount to that label). Fall back to the GB10 partition name
-              // so the overview keeps working where labels aren't populated.
-              const rootDisk =
-                spark.metrics.storage.find((d) => d.label === "/") ??
-                spark.metrics.storage.find((d) => d.device === "nvme0n1p2");
-              if (rootDisk) {
-                return (
-                  <MiniStat
-                    label="Storage"
-                    value={`${fmtStorage(rootDisk.used, false)} / ${fmtStorage(rootDisk.total, true)}`}
-                    tone={rootDisk.percentage > 85 ? "danger" : rootDisk.percentage > 60 ? "warning" : "default"}
-                    bold={false}
-                  />
-                );
-              }
-              return null;
-            })()}
-            {(() => {
-              const role = resolveSparkRole(spark);
-
-              // Workers have no local LLM API — show cluster/model label instead.
-              // Priority: manual workerLabel override > derived head-model
-              // mirror > generic fallback. Derived never shows a stale model:
-              // the backend nulls it when the head is unresolvable/offline.
-              if (role === "worker") {
-                const label =
-                  spark.workerLabel?.trim() || spark.workerDerivedLabel?.trim() || "distributed";
-                const title = headSparkName
-                  ? `${label} · worker of ${headSparkName}`
-                  : `${label} · distributed LLM worker`;
-                return (
-                  <MiniStat
-                    label="Worker"
-                    value={label}
-                    tone="accent"
-                    title={title}
-                    wrap
-                  />
-                );
-              }
-
-              // Head / Standalone: same as before — live backend + model id.
-              const llmArr = spark.metrics.llm;
-              const llm = Array.isArray(llmArr) ? llmArr.find((l) => l.available) : null;
-              if (!llm) return null;
-              return (
-                <MiniStat
-                  label={
-                    llm.backend === "vllm"
-                      ? "vLLM"
-                      : llm.backend === "ds4"
-                        ? "ds4"
-                        : llm.backend === "sglang"
-                          ? "sgLang"
-                          : llm.backend === "exl3"
-                            ? "EXL3"
-                            : llm.backend === "q27"
-                              ? "q27"
-                              : llm.backend ?? "LLM"
-                  }
-                  value={llm.modelId ?? "unknown"}
-                  tone="accent"
-                  title={llm.modelId ?? undefined}
-                  wrap
-                />
-              );
-            })()}
-          </div>
-
-          {(() => {
-            const role = resolveSparkRole(spark);
-            if (role === "worker") return null;
-            const llmArr = spark.metrics.llm;
-            const llm = Array.isArray(llmArr) ? llmArr.find((l) => l.available) : null;
-            if (!llm) return null;
-            return (
-              <div className="mt-3.5 grid grid-cols-2 gap-2 border-t border-border pt-3">
-                <div className="text-center">
-                  <span className="font-tabular text-[28px] font-bold leading-none text-text-strong">
-                    {llm.generationTps.toFixed(0)}
-                  </span>
-                  <span className="text-sm font-normal text-muted"> tok/s</span>
-                </div>
-                <div className="border-l border-border text-center">
-                  <span className="font-tabular text-[28px] font-bold leading-none text-text-strong">
-                    {llm.prefillTps.toFixed(0)}
-                  </span>
-                  <span className="text-sm font-normal text-muted"> prefill</span>
-                </div>
-              </div>
-            );
-          })()}
-        </>
-      )}
-    </div>
+    </section>
   );
 }
 
 export function OverviewPage({
+  nodeControls,
+  workspace = 'overview',
+  benchShareImage = false,
+  telemetryStale = false,
   sparks,
   hideOffline = false,
   hideWorkers = false,
@@ -402,17 +100,26 @@ export function OverviewPage({
   onSelectSpark,
 }: OverviewPageProps) {
   const [query, setQuery] = useState("");
+  const [nodeView, setNodeView] = useState<'cards'|'compare'>('cards');
+  const [analysisTab, setAnalysisTab] = useState<'history'|'energy'|'tokens'>('history');
+  const [diagnosticTab, setDiagnosticTab] = useState<'network'|'events'>('network');
+  const isSummary = workspace === 'overview';
+  const isNodes = workspace === 'nodes';
+  const searchEnabled = showOverviewSearch || isNodes;
+  const titles = {overview:'AI 集群监控',service:'模型服务',nodes:'节点监控',tests:'测试工具',analysis:'运行分析',diagnostics:'诊断'};
+  const descriptions = {overview:'服务状态、请求负载与多节点协同',service:'当前负载、服务质量与验收记录',nodes:'设备资源、节点对比与硬件详情',tests:'按目的选择测试，手动开始才会发送请求',analysis:'历史表现、能耗与 Token 用量',diagnostics:'区分采集异常、主机状态与模型问题'};
+  const [operations, setOperations] = useState<Operations | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "online" | "offline" | "issues">("all");
-  const withoutWorkers = hideWorkers ? sparks.filter((s) => !isWorkerSpark(s)) : sparks;
+  const withoutWorkers = hideWorkers && !isNodes ? sparks.filter((s) => !isWorkerSpark(s)) : sparks;
   const visibleSparks = withoutWorkers.filter((spark) => {
-    if (hideOffline && !spark.online) return false;
-    if (showOverviewSearch && query && !spark.name.toLowerCase().includes(query.toLowerCase())) return false;
-    if (showOverviewSearch && statusFilter === "online" && !spark.online) return false;
-    if (showOverviewSearch && statusFilter === "offline" && spark.online) return false;
-    if (showOverviewSearch && statusFilter === "issues" && spark.online && !spark.metrics.storage.some((disk) => disk.percentage >= 90)) return false;
+    if (hideOffline && isSummary && !spark.online) return false;
+    if (searchEnabled && query && !spark.name.toLowerCase().includes(query.toLowerCase())) return false;
+    if (searchEnabled && statusFilter === "online" && !spark.online) return false;
+    if (searchEnabled && statusFilter === "offline" && spark.online) return false;
+    if (searchEnabled && statusFilter === "issues" && nodeIssues(spark).length === 0) return false;
     return true;
   });
-  const hiddenWorkerCount = hideWorkers ? sparks.filter(isWorkerSpark).length : 0;
+  const hiddenWorkerCount = hideWorkers && isSummary ? sparks.filter(isWorkerSpark).length : 0;
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchMsg, setBatchMsg] = useState<{ text: string; tone: "ok" | "err" } | null>(null);
   const [shutdownOpen, setShutdownOpen] = useState(false);
@@ -464,9 +171,9 @@ export function OverviewPage({
       const started = res.results.filter((r) => r.started);
       const skipped = res.results.filter((r) => r.skipped).length;
       const failed = res.results.filter((r) => !r.ok && !r.skipped).length;
-      const parts = [`${started.length} update${started.length === 1 ? "" : "s"} started`];
-      if (skipped) parts.push(`${skipped} skipped`);
-      if (failed) parts.push(`${failed} failed`);
+      const parts = [`${started.length} 个更新已启动`];
+      if (skipped) parts.push(`${skipped} 个已跳过`);
+      if (failed) parts.push(`${failed} 个失败`);
       setBatchMsg({
         text: parts.join(", "),
         tone: failed === 0 ? "ok" : "err",
@@ -480,7 +187,7 @@ export function OverviewPage({
       });
     } catch (err: unknown) {
       setBatchMsg({
-        text: err instanceof Error ? err.message : "Batch hermes update failed",
+        text: err instanceof Error ? err.message : "批量更新 Hermes 失败",
         tone: "err",
       });
     } finally {
@@ -498,18 +205,20 @@ export function OverviewPage({
       const ok = res.results.filter((r) => r.ok).length;
       const fail = res.results.filter((r) => !r.ok && !r.skipped).length;
       const skipped = res.results.filter((r) => r.skipped).length;
-      const parts = [`${ok} shut down`];
-      if (fail) parts.push(`${fail} failed`);
-      if (skipped) parts.push(`${skipped} skipped`);
+      const parts = [`${ok} 个节点已接受关机命令；等待节点状态确认`];
+      if (fail) parts.push(`${fail} 个失败或未确认`);
+      if (skipped) parts.push(`${skipped} 个已跳过`);
       setBatchMsg({
         text: parts.join(", "),
         tone: fail === 0 ? "ok" : "err",
       });
+      if(!res.success)throw new Error(res.results.filter(r=>!r.ok).map(r=>`${sparks.find(s=>s.id===r.id)?.name||r.id}：${r.error||'未执行'}`).join('；'));
     } catch (err: unknown) {
       setBatchMsg({
-        text: err instanceof Error ? err.message : "Batch shutdown failed",
+        text: err instanceof Error ? err.message : "批量关机失败或结果未确认",
         tone: "err",
       });
+      throw err;
     } finally {
       setBatchLoading(false);
       setTimeout(() => setBatchMsg(null), 6000);
@@ -524,12 +233,12 @@ export function OverviewPage({
       const ok = res.results.filter((r) => r.ok).length;
       const fail = res.results.filter((r) => !r.ok).length;
       setBatchMsg({
-        text: fail === 0 ? `${ok} wake packet(s) sent` : `${ok} sent, ${fail} failed`,
+        text: fail === 0 ? `已发送 ${ok} 个唤醒包` : `${ok} 个已发送，${fail} 个失败`,
         tone: fail === 0 ? "ok" : "err",
       });
     } catch (err: unknown) {
       setBatchMsg({
-        text: err instanceof Error ? err.message : "Batch wake failed",
+        text: err instanceof Error ? err.message : "批量唤醒失败",
         tone: "err",
       });
     } finally {
@@ -538,46 +247,46 @@ export function OverviewPage({
     }
   }
 
-  if (withoutWorkers.length === 0 || (hideOffline && withoutWorkers.every((spark) => !spark.online))) {
+  if ((isSummary||isNodes) && (withoutWorkers.length === 0 || (isSummary&&hideOffline && withoutWorkers.every((spark) => !spark.online)))) {
     const allWorkersHidden = hideWorkers && sparks.length > 0 && withoutWorkers.length === 0;
     const allOffline = hideOffline && withoutWorkers.length > 0;
     const title = allWorkersHidden
-      ? "Worker nodes are hidden"
+      ? "工作节点已隐藏"
       : allOffline
-        ? "All Sparks are offline"
-        : "No Sparks registered";
+        ? "所有节点均离线"
+        : "尚未添加节点";
     const detail = allWorkersHidden
-      ? "Hide worker nodes is on in Settings. Turn it off to show Worker-role Sparks again."
+      ? "设置中已开启隐藏工作节点，关闭该选项即可重新显示。"
       : allOffline
-        ? "Auto-hide is enabled and no Sparks are currently online."
-        : "Click the + tab to add a DGX Spark unit.";
+        ? "已开启自动隐藏，目前没有在线节点。"
+        : "在节点监控中点击“添加节点”，配置 DGX Spark 设备。";
     return (
-      <div className="panel mx-auto mt-16 max-w-md p-8 text-center">
+      <>{isNodes && nodeControls}<div className="panel mx-auto mt-16 max-w-md p-8 text-center">
         <div className="mx-auto mb-4 flex h-10 w-10 items-center justify-center rounded-full bg-accent-soft text-accent">
           <ActivityIcon className="h-5 w-5" />
         </div>
         <h2 className="text-sm font-semibold text-text-strong">{title}</h2>
         <p className="mt-1 text-xs text-muted">{detail}</p>
-      </div>
+        {!isNodes&&<button className="workspace-text-link" onClick={()=>openWorkspace('nodes')}>打开节点监控</button>}
+      </div></>
     );
   }
 
-  const onlineCount = visibleSparks.filter((s) => s.online).length;
-
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: "var(--density-overview-rhythm)" }}>
-      {showFleetEnergy ? <FleetEnergyCard nodeCount={sparks.length} /> : null}
-      {showFleetExceptions ? <FleetAlertStrip sparks={sparks} onSelect={onSelectSpark} /> : null}
-      <div className="flex flex-wrap items-end justify-between gap-6">
-        <h1
-          className="font-normal leading-tight tracking-tight text-text-strong"
-          style={{ fontSize: "var(--density-overview-title)" }}
-        >
-          Overview
-        </h1>
-        <div className="flex flex-wrap items-end justify-end gap-3">
+    <div className="cockpit-overview" style={{ display: "flex", flexDirection: "column", gap: "var(--density-overview-rhythm)" }}>
+      {(isSummary && !telemetryStale && (showFleetExceptions || sparks.some(s=>nodeIssues(s).length>0))) ? <FleetAlertStrip sparks={sparks} onSelect={onSelectSpark} /> : null}
+      <div className={`overview-heading overview-heading--${workspace} flex flex-wrap items-center justify-between gap-6`}>
+        <div className="overview-title-copy">
+          <h1 className="font-semibold leading-tight tracking-tight text-text-strong">{titles[workspace]}</h1>
+          <p className="overview-subtitle mt-1 text-xs text-muted">{descriptions[workspace]}</p>
+          {hiddenWorkerCount > 0 && (
+            <p className="mt-1 text-xs text-muted">{hiddenWorkerCount} 个工作节点已隐藏</p>
+          )}
+        </div>
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          {isNodes && nodeControls}
           {batchMsg && (
-            <span className={`text-[11px] ${batchMsg.tone === "ok" ? "text-success" : "text-danger"}`}>
+            <span role="status" className={`text-[11px] leading-5 ${batchMsg.tone === "ok" ? "text-success" : "text-danger"}`}>
               {batchMsg.text}
             </span>
           )}
@@ -585,15 +294,15 @@ export function OverviewPage({
             <div className="flex flex-col items-end gap-1">
               <span className="flex items-center gap-1.5 text-[11px] text-muted">
                 <RotateIcon className="h-3 w-3" />
-                Updating Hermes — {batchProg.done}/{batchProg.total}
+                正在更新 Hermes — {batchProg.done}/{batchProg.total}
                 {batchProg.failed > 0 && (
-                  <span className="text-danger">({batchProg.failed} failed)</span>
+                  <span className="text-danger">（{batchProg.failed} 失败）</span>
                 )}
                 <button
                   type="button"
                   onClick={() => setBatchRun(null)}
-                  aria-label="Dismiss update progress"
-                  title="Dismiss"
+                  aria-label="关闭更新进度提示"
+                  title="关闭提示"
                   className="rounded p-0.5 text-muted transition-colors hover:bg-surface-hover hover:text-text"
                 >
                   <span className="text-xs leading-none">✕</span>
@@ -601,7 +310,7 @@ export function OverviewPage({
               </span>
               <div className="h-1 w-36 overflow-hidden rounded-full bg-border">
                 <div
-                  className={`h-full rounded-full transition-[width] duration-300 ease-out ${
+                  className={`telemetry-progress-fill h-full rounded-full transition-[width] duration-300 ease-out ${
                     batchProg.failed > 0 ? "bg-danger" : "bg-accent"
                   }`}
                   style={{
@@ -611,14 +320,14 @@ export function OverviewPage({
               </div>
             </div>
           )}
-          {sparks.length > 0 && (
-            <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {(isSummary || isNodes) && sparks.length > 0 && (
+            <div className="overview-power-actions flex flex-wrap items-center justify-end gap-1.5">
               {hermesMonitoredCount > 0 && (
                 <button
                   type="button"
                   onClick={() => void handleUpdateAllHermes()}
                   disabled={batchLoading}
-                  title="Run `hermes update` on every Spark with Hermes Agent enabled"
+                  title="在所有启用 Hermes Agent 的节点上执行 hermes update"
                   className={`flex items-center gap-1 rounded-md border bg-surface-elevated px-2.5 py-1.5 text-[11px] transition-colors disabled:opacity-50 ${
                     hermesPendingUpdateCount > 0
                       ? "border-warning/40 text-warning hover:bg-warning/15"
@@ -626,11 +335,11 @@ export function OverviewPage({
                   }`}
                 >
                   <RotateIcon className="h-3 w-3" />
-                  Update Hermes
+                  更新 Hermes
                   {hermesPendingUpdateCount > 0 && (
                     <span
                       className="ml-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-warning px-1 text-[9px] font-bold leading-none text-white"
-                      title={`${hermesPendingUpdateCount} Spark${hermesPendingUpdateCount === 1 ? "" : "s"} with a Hermes update available`}
+                      title={`${hermesPendingUpdateCount} 个节点有可用的 Hermes 更新`}
                     >
                       {hermesPendingUpdateCount}
                     </span>
@@ -641,85 +350,104 @@ export function OverviewPage({
                 type="button"
                 onClick={() => void handleWakeAll()}
                 disabled={batchLoading}
-                title="Wake all Sparks that have a MAC configured (WoL)"
+                title="向所有已配置 MAC 地址的节点发送局域网唤醒包"
                 className="flex items-center gap-1 rounded-md border border-border bg-surface-elevated px-2.5 py-1.5 text-[11px] text-muted hover:bg-success/20 hover:text-success transition-colors disabled:opacity-50"
               >
                 <PowerOnIcon className="h-3 w-3" />
-                Wake All
+                全部唤醒
               </button>
               <button
                 type="button"
                 onClick={() => setShutdownOpen(true)}
                 disabled={batchLoading || onlineShutdownCount === 0}
-                title="Shut down all online Sparks"
+                title="关闭全部在线节点"
                 className="flex items-center gap-1 rounded-md border border-border bg-surface-elevated px-2.5 py-1.5 text-[11px] text-muted transition-colors hover:bg-danger/20 hover:text-danger disabled:opacity-50"
               >
                 <PowerOffIcon className="h-3 w-3" />
-                Shutdown All
+                全部关机
               </button>
             </div>
           )}
-          <span className="online-chip">
-            <span className="dot" />
-            {onlineCount}/{visibleSparks.length} online
-          </span>
-          {hiddenWorkerCount > 0 && (
-            <span className="text-[11px] text-muted">
-              {hiddenWorkerCount} worker{hiddenWorkerCount === 1 ? "" : "s"} hidden
-            </span>
-          )}
         </div>
       </div>
-      {showOverviewSearch ? (
-      <div className="flex flex-wrap gap-2" role="search" aria-label="Filter fleet units">
+      {isSummary && <><SparkHero compact sparks={sparks} stale={telemetryStale} onSelect={onSelectSpark} operations={operations} /><div className="workspace-section-heading"><h2 className="cockpit-nodes-heading">{sparks.length === 4 ? '节点协同' : '设备协同'}</h2><button className="workspace-text-link" onClick={()=>openWorkspace('nodes')}>节点详情与对比</button></div></>}
+      {isNodes && <div className="workspace-subnav" aria-label="节点视图"><button aria-pressed={nodeView==='cards'} onClick={()=>setNodeView('cards')}>节点卡片</button><button aria-pressed={nodeView==='compare'} onClick={()=>setNodeView('compare')}>指标对比</button></div>}
+      {(isSummary || isNodes) && (showOverviewSearch || isNodes) ? (
+      <div className="node-filters flex flex-wrap gap-2" role="search" aria-label="筛选集群节点">
         <input
           value={query}
           onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search up to 12 units"
-          aria-label="Search units by name"
+          placeholder="搜索节点（最多 12 台）"
+          aria-label="按名称搜索节点"
           className="min-h-11 min-w-52 flex-1 rounded border border-border bg-surface-elevated px-3 text-sm text-text"
         />
         <select
           value={statusFilter}
           onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}
-          aria-label="Filter units by status"
+          aria-label="按状态筛选节点"
           className="min-h-11 rounded border border-border bg-surface-elevated px-3 text-sm text-text"
         >
-          <option value="all">All status</option>
-          <option value="online">Online</option>
-          <option value="offline">Offline</option>
-          <option value="issues">Issues</option>
+          <option value="all">全部状态</option>
+          <option value="online">在线</option>
+          <option value="offline">离线</option>
+          <option value="issues">异常</option>
         </select>
       </div>
       ) : null}
-      <ConfirmShutdownDialog
-        open={shutdownOpen}
-        onClose={() => setShutdownOpen(false)}
-        onConfirm={handleShutdownAll}
-        title="Shutdown All"
-        description={`Gracefully shut down all ${onlineShutdownCount} online Spark${onlineShutdownCount === 1 ? "" : "s"}? Offline nodes will be skipped.`}
-        confirmLabel="Shut down all"
-      />
-      <div className="overview-page grid sm:grid-cols-2 lg:grid-cols-3" style={{ gap: "var(--density-page-gap)" }}>
+      {(isSummary || isNodes && nodeView === 'cards') && <div className="overview-page overview-comparison cockpit-node-rail grid" tabIndex={0} role="region" aria-label="设备节点，可横向滚动" style={{ gap: "var(--density-page-gap)" }}>
         {visibleSparks.length === 0 && (
-          <p className="panel p-6 text-sm text-muted sm:col-span-2 lg:col-span-3">
-            No units match the current search and status filters.
-          </p>
+          <div className="panel node-filter-empty p-6 text-sm text-muted" role="status" style={{gridColumn:'1 / -1'}}>
+            <p>没有符合当前筛选条件的节点。</p><button onClick={()=>{setQuery('');setStatusFilter('all');}}>清除筛选</button>
+          </div>
         )}
         {visibleSparks.map((spark) => (
-          <SparkCard
+          <CockpitNodeCard
             key={spark.id}
             spark={spark}
-            headSparkName={
+            headSpark={
               spark.workerHeadId
-                ? sparks.find((s) => s.id === spark.workerHeadId)?.name ?? null
-                : null
+                ? sparks.find((s) => s.id === spark.workerHeadId && resolveSparkRole(s) === 'head')
+                : undefined
             }
+            stale={telemetryStale}
             temperatureUnit={temperatureUnit}
             onSelect={onSelectSpark}
           />
         ))}
-      </div>
+      </div>}
+      {isNodes && nodeView === 'compare' && visibleSparks.length > 0 ? (
+        <section className="comparison-band" aria-label="实时指标数据">
+          <div className="comparison-band__header">
+            <div>
+              <h2>节点指标对比</h2>
+              <p>集群各节点的当前负载与资源状态</p>
+            </div>
+            <span className="text-[11px] text-muted">实时刷新</span>
+          </div>
+          <div className="comparison-band__grid">
+            <ComparisonMetric title="GPU 使用率" sparks={visibleSparks} value={(s) => telemetryStale ? null : finite(s.metrics.gpu?.usage)} max={100} format={(v) => `${Math.round(v)}%`} />
+            <ComparisonMetric title="GPU 温度" sparks={visibleSparks} color={(v) => temperatureColor(v, temperatureUnit)} value={(s) => telemetryStale || !s.metrics.gpu?.temperature ? null : s.metrics.gpu.temperature} max={100} format={(v) => temperatureUnit === 'fahrenheit' ? `${celsiusToFahrenheit(v)}°F` : `${Math.round(v)}°C`} />
+            <ComparisonMetric title="GPU 内存占用" sparks={visibleSparks} value={(s) => telemetryStale ? null : finite(s.metrics.gpu?.vram?.used)} max={Math.max(1,...visibleSparks.map((s) => s.metrics.gpu?.vram?.total ?? 0))} format={(v) => formatMb(v)} />
+            <ComparisonMetric title="GPU 功耗（非整机）" sparks={visibleSparks} color={(_, s) => temperatureColor(s.metrics.gpu?.temperature ?? 0, temperatureUnit)} value={(s) => telemetryStale ? null : finite(s.metrics.gpu?.power.draw)} max={Math.max(1,...visibleSparks.map(s=>s.metrics.gpu?.power.limit??0))} format={(v) => `${v.toFixed(1)} W`} />
+          </div>
+        </section>
+      ) : null}
+      {workspace === 'tests' && <TestTools sparks={sparks} shareImage={benchShareImage} />}
+      {workspace === 'analysis' && <div className="workspace-subnav" aria-label="分析分类">{([['history','性能历史'],['energy','能耗效率'],['tokens','Token 用量']] as const).map(([id,label])=><button key={id} aria-pressed={analysisTab===id} onClick={()=>setAnalysisTab(id)}>{label}</button>)}</div>}
+      {workspace === 'diagnostics' && <div className="workspace-subnav" aria-label="诊断分类"><button aria-pressed={diagnosticTab==='network'} onClick={()=>setDiagnosticTab('network')}>采集与互联</button><button aria-pressed={diagnosticTab==='events'} onClick={()=>setDiagnosticTab('events')}>采集事件</button></div>}
+      {(isSummary || workspace === 'service' || workspace === 'analysis' && analysisTab !== 'tokens' || workspace === 'diagnostics') && <OperationsPanel sparks={sparks} stale={telemetryStale} onSelect={onSelectSpark} onData={setOperations} view={isSummary?'summary':workspace==='service'?'service':workspace==='analysis'?analysisTab==='energy'?'energy':'history':diagnosticTab}/>}
+      {isNodes && nodeView === 'compare' && visibleSparks.length === 0 && <div className="panel node-filter-empty p-6 text-sm text-muted" role="status"><p>没有符合当前筛选条件的节点。</p><button onClick={()=>{setQuery('');setStatusFilter('all');}}>清除筛选</button></div>}
+      {isSummary && <div className="overview-next-actions"><button onClick={()=>openWorkspace('service')}>模型性能与验收</button><button onClick={()=>openWorkspace('analysis')}>历史与用量</button>{showFleetEnergy&&<button onClick={()=>{setAnalysisTab('energy');openWorkspace('analysis');}}>能耗估算</button>}<button onClick={()=>openWorkspace('diagnostics')}>采集状态与诊断</button></div>}
+      <ConfirmShutdownDialog
+        open={shutdownOpen}
+        targets={sparks.filter(s=>s.online).map(s=>({id:s.id,name:s.name}))}
+        onClose={() => setShutdownOpen(false)}
+        onConfirm={handleShutdownAll}
+        title="全部关机"
+        description={`确认关闭全部 ${onlineShutdownCount} 个在线节点？离线节点将跳过。需要各宿主机已有的关机脚本；连接中断不代表已关机。`}
+        confirmLabel="全部关机"
+      />
+      {workspace === 'analysis' && analysisTab === 'tokens' && <TokenLedgerCard defaultOpen />}
     </div>
   );
 }

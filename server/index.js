@@ -1,7 +1,11 @@
+import { registerControlAdmission } from './controlAdmission.js';
+import { hasOpenClients, installListenErrorHandler } from './runtimeSafety.js';
+import { registerRoceRoutes } from './roceRoutes.js';
 import express from "express";
+import { assertBenchmarkAdmission } from './taskAdmission.js';
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
-import { spawn } from "child_process";
+import { createReadinessInspector, createShutdownLock, shutdownBatch, initiateSparkShutdown as executeShutdown } from "./shutdown.js";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -17,8 +21,10 @@ import {
   validateDecodeBudget,
   validatePrefillBudget,
 } from "./validate.js";
-import { authorizeUpgrade, configuredToken, createAuthMiddleware, requireRemoteAuth } from "./auth.js";
+import { authMode, authorizeUpgrade, configuredToken, createAuthMiddleware, requireRemoteAuth } from "./auth.js";
 import { inspectHealth } from "./health.js";
+import { registerOperationsRoutes } from "./operations.js";
+import { registerVerificationRoutes } from "./serviceVerification.js";
 import { getSettings, updateSettings, loadSettings } from "./settings.js";
 import { broadcastForLanIp, effectiveMac, normalizeMac, sendWol } from "./wol.js";
 import {
@@ -40,11 +46,14 @@ import { closeLlmStreamAgent } from "./collectors/LlmStreaming.js";
 import { compareSemver, getLatestRelease } from "./collectors/HermesReleases.js";
 import { FLEET_ENERGY_JSON_PATH } from "./config.js";
 import { FleetEnergyTracker } from "./energy/FleetEnergyTracker.js";
+import { LlmTokenLedger } from './llmtokens/LlmTokenLedger.js';
+import { createLlmTokenRuntime } from './llmtokens/LlmTokenRuntime.js';
 import {
   createFleetEnergyRuntime,
   registerFleetEnergyRoute,
 } from "./energy/FleetEnergyRuntime.js";
 import { testSparkConnectivity } from "./connectivity.js";
+import { createConnectivityEvents } from './connectivityEvents.js';
 import { inspectStartupPreflight, logStartupPreflight } from "./startupPreflight.js";
 
 dotenv.config();
@@ -246,6 +255,7 @@ function consumeBenchStartQuota(req, res) {
 
 // ─── Spark registry ──────────────────────────────────────
 const registry = new SparkRegistry();
+const tokenLedger = new LlmTokenLedger(path.join(ROOT,'config','llm-token-totals.json'));
 
 const fleetEnergyTracker = new FleetEnergyTracker({
   nodeIds: registry.sparkIds,
@@ -254,11 +264,18 @@ const fleetEnergyTracker = new FleetEnergyTracker({
 
 // ─── Monitor map ─────────────────────────────────────────
 const monitors = new Map();
+const connectivityEvents = createConnectivityEvents({
+  file:path.join(ROOT,'config','connectivity-events.jsonl'),
+  nodeIds:() => registry.sparkIds,
+  snapshots:() => orderedSnapshots(),
+});
+connectivityEvents.record({source:'server',kind:'server_start',pid:process.pid,watchMode:process.execArgv.some(a=>a.startsWith('--watch'))});
 
 // ─── Start monitor for a Spark ───────────────────────────
 function startMonitor(spark) {
   if (monitors.has(spark.id)) return;
   const monitor = new SparkMonitor(spark, {
+    onConnectivity: event => connectivityEvents.record(event),
     onWolMac: (id, mac) => {
       const updated = registry.noteDetectedMac(id, mac);
       if (updated) {
@@ -306,6 +323,7 @@ const fleetEnergyRuntime = createFleetEnergyRuntime({
   orderedSnapshots,
   monitors,
 });
+const tokenRuntime = createLlmTokenRuntime({ledger:tokenLedger,orderedSnapshots});
 
 // ─── Express app ─────────────────────────────────────────
 const app = express();
@@ -313,6 +331,15 @@ const server = createServer(app);
 
 app.use(express.json());
 app.use(createAuthMiddleware());
+registerControlAdmission(app, {
+  file: path.join(ROOT, 'config', 'control-operation.json'),
+  readSecret: () => fs.readFileSync('/host/root/home/wyatt/dgx-control-center/data/access-code', 'utf8'),
+  activeJobs: () => registry.sparkIds.some(id => decodeBenchManager.getActive(id) || prefillBenchManager.getActive(id) || showcaseManager.getActive(id)),
+});
+connectivityEvents.register(app);
+const nativeOperationsRuntime = registerOperationsRoutes(app, orderedSnapshots, path.join(ROOT, 'config', 'operations-events.json'),id=>registry.getSpark(id));
+registerRoceRoutes(app, registry);
+registerVerificationRoutes(app, {snapshots:orderedSnapshots,getSpark:id=>registry.getSpark(id),file:path.join(ROOT,'config','service-verification.json')});
 
 app.get("/api/health", (_req, res) => {
   res.json(inspectHealth(process.env.BIND_HOST || "127.0.0.1"));
@@ -324,6 +351,7 @@ function clientKey(req) {
 
 // ─── REST API ────────────────────────────────────────────
 registerFleetEnergyRoute(app, fleetEnergyTracker);
+app.get('/api/llm-token-totals', (req,res) => res.json(tokenLedger.snapshot(req.query.range)));
 
 // Never return SSH passwords in any response
 app.get("/api/sparks", (_req, res) => {
@@ -401,10 +429,11 @@ app.patch("/api/sparks/:id", (req, res) => {
   try {
     const body = req.body || {};
     // Only validate host fields if they are being updated
-    if (body.lanIp != null || body.ssh?.host != null || body.ssh?.user != null) {
+    if (body.isLocal != null || body.lanIp != null || body.ssh?.host != null || body.ssh?.user != null) {
       const existing = registry.getSpark(req.params.id);
       if (!existing) return res.status(404).json({ error: "Spark not found" });
       const merged = {
+        isLocal: body.isLocal ?? existing.isLocal,
         lanIp: body.lanIp ?? existing.lanIp,
         ssh: { ...existing.ssh, ...(body.ssh || {}) },
       };
@@ -1024,6 +1053,7 @@ app.post("/api/sparks/:id/llm/bench", async (req, res) => {
   try {
     if (!consumeBenchStartQuota(req, res)) return;
     const benchDebug = Boolean(getSettings().benchDebugTraces);
+    assertBenchmarkAdmission(spark.id, 'decode', {decode:decodeBenchManager, prefill:prefillBenchManager, showcase:showcaseManager, maxActive:MAX_ACTIVE_BENCH_JOBS});
     const job = decodeBenchManager.start({
       sparkId: spark.id,
       lanIp: llmProbeHost(spark),
@@ -1195,6 +1225,7 @@ app.post("/api/sparks/:id/llm/prefill-bench", async (req, res) => {
 
   try {
     if (!consumeBenchStartQuota(req, res)) return;
+    assertBenchmarkAdmission(spark.id, 'prefill', {decode:decodeBenchManager, prefill:prefillBenchManager, showcase:showcaseManager, maxActive:MAX_ACTIVE_BENCH_JOBS});
     const job = prefillBenchManager.start({
       sparkId: spark.id,
       lanIp: llmProbeHost(spark),
@@ -1414,19 +1445,6 @@ app.delete("/api/sparks/:id/llm/showcase/:sessionId", (req, res) => {
 // These routes are unauthenticated like the rest of the LAN dashboard — do not
 // expose port 5555 beyond a trusted network.
 
-const SHUTDOWN_BIN = "/usr/local/bin/spark-shutdown";
-/**
- * Remote: verify script + passwordless sudo, then background shutdown so SSH
- * returns before the host dies. Failures before backgrounding surface to the UI.
- */
-const SHUTDOWN_REMOTE_CMD = [
-  `test -x ${SHUTDOWN_BIN} || { echo "missing ${SHUTDOWN_BIN}" >&2; exit 127; }`,
-  `sudo -n true || { echo "sudo -n required for ${SHUTDOWN_BIN}" >&2; exit 126; }`,
-  `nohup sudo -n ${SHUTDOWN_BIN} >/dev/null 2>&1 &`,
-  `sleep 0.3`,
-  `exit 0`,
-].join("; ");
-
 function shutdownErrorStatus(msg) {
   if (/timed out|connection refused|unreachable|no route|ECONNREFUSED|ETIMEDOUT/i.test(msg)) {
     return 503;
@@ -1434,89 +1452,32 @@ function shutdownErrorStatus(msg) {
   return 500;
 }
 
-/**
- * Only treat "host dropped the SSH session mid-shutdown" as success.
- * Connect timeouts / auth / missing script must remain real errors.
- */
-function isBenignShutdownSshError(msg) {
-  return /ECONNRESET|Connection reset|broken pipe|Connection closed by remote|closed by remote host|Connection to .* closed/i.test(
-    String(msg || "")
-  );
+/** A lost response is unconfirmed, never proof that a host powered off. */
+const shutdownReadiness = createReadinessInspector({remoteExec:sshExec});
+const withShutdownLock = createShutdownLock();
+async function initiateSparkShutdown(spark) {
+  const readiness = await shutdownReadiness(spark, true);
+  if (!readiness.ready) throw Object.assign(new Error(readiness.message), {status:409});
+  return executeShutdown(spark, { remoteExec: sshExec });
 }
 
-/**
- * Kick off graceful shutdown. Always aims to return quickly so the browser
- * gets a real JSON response instead of "Failed to fetch" when the SSH session
- * drops as the host powers off.
- */
-function initiateSparkShutdown(spark) {
-  if (spark.isLocal) {
-    return new Promise((resolve, reject) => {
-      try {
-        const child = spawn("sudo", ["-n", SHUTDOWN_BIN], {
-          detached: true,
-          stdio: "ignore",
-        });
-        child.on("error", (err) => {
-          const msg = err.message || String(err);
-          if (/ENOENT|not found/i.test(msg)) {
-            reject(new Error(`${SHUTDOWN_BIN} not found on this host`));
-          } else {
-            reject(new Error(msg));
-          }
-        });
-        child.unref();
-        resolve("Shutdown initiated");
-      } catch (err) {
-        reject(err);
-      }
-    });
-  }
-
-  return sshExec(spark, SHUTDOWN_REMOTE_CMD, { timeoutMs: 8000 })
-    .then(() => "Shutdown initiated")
-    .catch((err) => {
-      const msg = err.message || String(err);
-      if (isBenignShutdownSshError(msg)) {
-        return "Shutdown initiated";
-      }
-      throw err;
-    });
-}
+app.get('/api/sparks/:id/power-readiness', async(req,res)=>{
+  const spark=registry.getSpark(req.params.id);
+  if(!spark)return res.status(404).json({error:'找不到节点'});
+  res.json(await shutdownReadiness(spark));
+});
 
 /** Batch routes first so they never collide with /:id/* if routing changes. */
 app.post("/api/sparks/shutdown-all", async (_req, res) => {
-  const results = [];
   // Remotes first, local last — shutting down the dashboard host mid-loop would
   // skip remaining Sparks.
   const ordered = [
     ...registry.sparks.filter((s) => !s.isLocal),
     ...registry.sparks.filter((s) => s.isLocal),
   ];
-  for (const spark of ordered) {
-    const monitor = monitors.get(spark.id);
-    if (!monitor?.online) {
-      results.push({ id: spark.id, ok: false, skipped: true, error: "Offline — skipped" });
-      continue;
-    }
-    try {
-      // Local dashboard host: acknowledge before power-off kills this process.
-      if (spark.isLocal) {
-        results.push({ id: spark.id, ok: true, message: "Shutdown initiated" });
-        setImmediate(() => {
-          void initiateSparkShutdown(spark).catch((err) => {
-            console.error(`[shutdown-all] local ${spark.id}:`, err.message);
-          });
-        });
-        continue;
-      }
-      await initiateSparkShutdown(spark);
-      results.push({ id: spark.id, ok: true });
-    } catch (err) {
-      results.push({ id: spark.id, ok: false, error: err.message || String(err) });
-    }
-  }
-  res.json({ success: true, results });
+  try {
+    res.json(await withShutdownLock(ordered.map(s=>s.id),()=>shutdownBatch(ordered, {isOnline:s=>!!monitors.get(s.id)?.online,inspect:shutdownReadiness,execute:initiateSparkShutdown})));
+  } catch(error) {res.status(error.status||503).json({error:error.status?error.message:'无法确认批量关机状态，请检查后重试'});}
 });
 
 app.post("/api/sparks/wake-all", async (_req, res) => {
@@ -1547,24 +1508,12 @@ app.post("/api/sparks/:id/shutdown", async (req, res) => {
     const spark = registry.getSpark(req.params.id);
     if (!spark) return res.status(404).json({ error: "Spark not found" });
 
-    // Local: send JSON first, then power off — otherwise the process dies mid-response
-    // and the UI shows "Failed to fetch".
-    if (spark.isLocal) {
-      res.json({ success: true, message: "Shutdown initiated" });
-      setImmediate(() => {
-        void initiateSparkShutdown(spark).catch((err) => {
-          console.error(`[shutdown] local ${spark.id}:`, err.message);
-        });
-      });
-      return;
-    }
-
     try {
-      const message = await initiateSparkShutdown(spark);
+      const message = await withShutdownLock([spark.id],()=>initiateSparkShutdown(spark));
       res.json({ success: true, message, output: message });
     } catch (err) {
       const msg = err.message || String(err);
-      res.status(shutdownErrorStatus(msg)).json({
+      res.status(err.status || shutdownErrorStatus(msg)).json({
         error: shutdownErrorStatus(msg) === 503 ? `Spark unreachable: ${msg}` : msg,
       });
     }
@@ -1647,13 +1596,13 @@ wss.on("connection", (ws) => {
 
 // ─── Broadcast snapshot (dynamic interval) ────────────────
 let broadcastTimer = null;
-let _lastBroadcastPayload = null;
 
 /** Build the snapshot payload string. Centralized so broadcast + refresh share it. */
 function buildSnapshotPayload() {
   return JSON.stringify({
     type: "snapshot",
     generatedAt: Date.now(),
+    bootId: connectivityEvents.journal.bootId,
     sparks: orderedSnapshots(),
     refreshInterval: getSettings().pollIntervalMs,
   });
@@ -1690,19 +1639,16 @@ function broadcastPayload(payload) {
  * UI reflects the result right away instead of on the next poll tick.
  */
 function forceBroadcast() {
+  if (!hasOpenClients(wss.clients)) return;
   const payload = buildSnapshotPayload();
-  _lastBroadcastPayload = payload;
   broadcastPayload(payload);
 }
 
 function startBroadcast() {
   const interval = getSettings().pollIntervalMs;
   broadcastTimer = setInterval(() => {
+    if (!hasOpenClients(wss.clients)) return;
     const payload = buildSnapshotPayload();
-    // Skip the broadcast entirely when nothing changed since the last tick.
-    // A 1s poll that produces identical snapshots becomes free for idle tabs.
-    if (_lastBroadcastPayload !== null && payload === _lastBroadcastPayload) return;
-    _lastBroadcastPayload = payload;
     broadcastPayload(payload);
   }, interval);
 }
@@ -1712,7 +1658,6 @@ function restartBroadcast() {
     clearInterval(broadcastTimer);
     broadcastTimer = null;
   }
-  _lastBroadcastPayload = null; // force a fresh broadcast on the new cadence
   startBroadcast();
 }
 
@@ -1723,17 +1668,19 @@ logStartupPreflight(startupPreflight, BIND_HOST, PORT);
 
 if (!startupPreflight.fatal) {
   startBroadcast();
+  installListenErrorHandler(server, BIND_HOST, PORT, {webSocket:wss});
   server.listen(PORT, BIND_HOST, () => {
     console.log(`[sparkDash] server listening on http://${BIND_HOST}:${PORT}`);
     console.log(`[sparkDash] WebSocket endpoint ws://${BIND_HOST}:${PORT}/ws`);
     const remote = requireRemoteAuth(BIND_HOST);
     const tokenConfigured = Boolean(configuredToken());
-    console.log(`[sparkDash] bind=${BIND_HOST} auth=${tokenConfigured ? "bearer" : remote ? "required-missing" : "loopback-open"}`);
+    console.log(`[sparkDash] bind=${BIND_HOST} auth=${authMode(BIND_HOST)}`);
     if (remote && !tokenConfigured) {
-      console.warn("[sparkDash] WARNING: remote bind without SPARKDASH_TOKEN — mutations and telemetry will fail closed until a token is set.");
+      console.warn("[sparkDash] WARNING: remote-open mode — telemetry and actions are available without a token. Restrict access to a trusted network.");
     }
     startAllMonitors();
     fleetEnergyRuntime.start();
+    tokenRuntime.start();
   });
 } else {
   process.exitCode = 1;
@@ -1744,6 +1691,7 @@ let _shuttingDown = false;
 async function shutdown(signal) {
   if (_shuttingDown) return;
   _shuttingDown = true;
+  connectivityEvents.record({source:'server',kind:'server_stop',signal});
   console.log(`[sparkDash] ${signal} received, shutting down…`);
   try {
     // Finalize in-flight benches before the process dies so clients polling
@@ -1763,6 +1711,9 @@ async function shutdown(signal) {
     console.error("[sparkDash] failed to flush LLM daily history:", err.message);
   }
   const energyPersistenceSucceeded = fleetEnergyRuntime.stop();
+  let tokenPersistenceSucceeded=true;
+  nativeOperationsRuntime.close();
+  try { tokenRuntime.stop(); } catch(e) {tokenPersistenceSucceeded=false;console.error('[LlmTokenLedger] shutdown save failed:',e.message);}
   const streamAgentClosedGracefully = await closeLlmStreamAgent();
   if (!streamAgentClosedGracefully) {
     console.warn("[sparkDash] LLM dispatcher close timed out; destroyed open sockets");
@@ -1790,7 +1741,7 @@ async function shutdown(signal) {
     /* ignore */
   }
   wss.close();
-  server.close(() => process.exit(energyPersistenceSucceeded ? 0 : 1));
+  server.close(() => process.exit(energyPersistenceSucceeded && tokenPersistenceSucceeded ? 0 : 1));
   // Safety net: if server.close hangs (lingering keep-alive), force-exit.
   setTimeout(() => process.exit(1), 3000).unref();
 }

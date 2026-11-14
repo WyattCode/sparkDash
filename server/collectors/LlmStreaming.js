@@ -151,6 +151,10 @@ export async function readServerGenerationTokens(baseUrl, opts = {}) {
         /^vllm:generation_tokens_total(?:\{[^}]*\})?\s+([\d.eE+-]+)\s*$/gm
       );
       if (vllm != null) return vllm;
+      const tensorfold = fromSeries(
+        /^tensorfold_health:completion_tokens_total(?:\{[^}]*\})?\s+([\d.eE+-]+)\s*$/gm
+      );
+      if (tensorfold != null) return tensorfold;
       const sglang =
         fromSeries(
           /^sglang:generation_tokens_total(?:\{[^}]*\})?\s+([\d.eE+-]+)\s*$/gm
@@ -183,7 +187,7 @@ export async function readServerGenerationTokens(baseUrl, opts = {}) {
     if (res.ok) {
       const data = await res.json();
       const v = Number(data?.completion_tokens_total);
-      if (Number.isFinite(v) && data?.backend === "exl3") return v;
+      if (Number.isFinite(v) && ["exl3","tensorfold"].includes(data?.backend)) return v;
       if (Number.isFinite(v) && typeof data?.busy === "boolean") return v;
     }
   } catch {
@@ -548,6 +552,7 @@ async function runStreamingRequestOnce(
   let answerContent = "";
   let sseEventCount = 0;
   let firstSseDataPreview = null;
+  let sawDone = false;
   const keepContent = Boolean(debug || collectContent);
   const deltaCb = typeof onDelta === "function" ? onDelta : null;
 
@@ -583,91 +588,116 @@ async function runStreamingRequestOnce(
     const decoder = new TextDecoder();
     let buffer = "";
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
+    try {
+      streamLoop:
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        // Normalize the accumulated buffer so CRLF split across chunks also works.
+        buffer = buffer.replace(/\r\n/g, "\n");
 
-      // SSE events are separated by blank lines
-      let sep;
-      while ((sep = buffer.indexOf("\n\n")) !== -1) {
-        const rawEvent = buffer.slice(0, sep);
-        buffer = buffer.slice(sep + 2);
-
-        for (const line of rawEvent.split("\n")) {
-          const trimmed = line.trim();
-          if (!trimmed.startsWith("data:")) continue;
-          const data = trimmed.slice(5).trim();
-          if (!data || data === "[DONE]") continue;
-
-          if (debug) {
-            sseEventCount += 1;
-            if (firstSseDataPreview == null) {
-              firstSseDataPreview = data.slice(0, 240);
-            }
+        // SSE events are separated by blank lines
+        let sep;
+        while ((sep = buffer.indexOf("\n\n")) !== -1) {
+          const rawEvent = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + 2);
+          // A 200 response can still fail after output has started (including
+          // SGLang repetition protection). Never report such a stream as success.
+          if (rawEvent.split("\n").some(line => /^event:\s*error\s*$/.test(line))) {
+            throw new Error('流式响应错误：服务端错误事件');
           }
 
-          let json;
-          try {
-            json = JSON.parse(data);
-          } catch {
-            continue;
-          }
+          for (const line of rawEvent.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+            const data = trimmed.slice(5).trim();
+            if (!data) continue;
+            if (data === "[DONE]") {sawDone = true;break streamLoop;}
 
-          if (debug && json.id && !completionId) completionId = String(json.id);
-          if (json.model) model = json.model;
-          if (json.usage && typeof json.usage === "object") {
-            usage = {
-              promptTokens: Number(json.usage.prompt_tokens) || 0,
-              completionTokens: Number(json.usage.completion_tokens) || 0,
-              totalTokens: Number(json.usage.total_tokens) || 0,
-            };
-            if (json.usage.completion_tokens != null) {
-              usageCompletionTokens = Number(json.usage.completion_tokens);
+            if (debug) {
+              sseEventCount += 1;
+              if (firstSseDataPreview == null) {
+                firstSseDataPreview = data.slice(0, 240);
+              }
             }
-            if (json.usage.prompt_tokens != null) {
-              usagePromptTokens = Number(json.usage.prompt_tokens);
-            }
-          }
 
-          const choice = json.choices?.[0];
-          if (debug && choice?.finish_reason) finishReason = String(choice.finish_reason);
+            let json;
+            try {
+              json = JSON.parse(data);
+            } catch {
+              continue;
+            }
+            if (!json || typeof json !== 'object') continue;
+            if (json.error != null) throw new Error('流式响应错误：服务端返回错误');
 
-          const { answer, reasoning, tokenChunks } = extractDeltaPieces(choice);
-          if (tokenChunks > 0) {
-            const now = performance.now();
-            if (tFirst == null) tFirst = now;
-            tLast = now;
-            if (reasoning) {
-              reasoningChunkCount += 1;
-            } else if (tFirstContent == null) {
-              tFirstContent = now;
+            if (debug && json.id && !completionId) completionId = String(json.id);
+            if (json.model) model = json.model;
+            if (json.usage && typeof json.usage === "object") {
+              usage = {
+                promptTokens: Number(json.usage.prompt_tokens) || 0,
+                completionTokens: Number(json.usage.completion_tokens) || 0,
+                totalTokens: Number(json.usage.total_tokens) || 0,
+              };
+              if (json.usage.completion_tokens != null) {
+                usageCompletionTokens = Number(json.usage.completion_tokens);
+              }
+              if (json.usage.prompt_tokens != null) {
+                usagePromptTokens = Number(json.usage.prompt_tokens);
+              }
             }
-            chunkTokenCount += tokenChunks;
-            const text = `${reasoning}${answer}`;
-            if (keepContent) {
-              if (reasoning) reasoningContent += reasoning;
-              if (answer) answerContent += answer;
-              content += text;
+
+            const choice = json.choices?.[0];
+            if (choice?.finish_reason) {
+              const reason = choice.finish_reason;
+              finishReason = typeof reason === 'object' ? String(reason.type || '') : String(reason);
+              if (/^(error|abort|aborted)$/i.test(finishReason)) {
+                throw new Error('流式响应错误：服务端中止生成');
+              }
             }
-            if (deltaCb) {
-              try {
-                deltaCb({
-                  text: text || undefined,
-                  answer: answer || undefined,
-                  reasoning: reasoning || undefined,
-                  tokenCount: chunkTokenCount,
-                  tFirst,
-                  tLast,
-                  model,
-                });
-              } catch {
-                /* non-fatal */
+
+            const { answer, reasoning, tokenChunks } = extractDeltaPieces(choice);
+            if (tokenChunks > 0) {
+              const now = performance.now();
+              if (tFirst == null) tFirst = now;
+              tLast = now;
+              if (reasoning) {
+                reasoningChunkCount += 1;
+              } else if (tFirstContent == null) {
+                tFirstContent = now;
+              }
+              chunkTokenCount += tokenChunks;
+              const text = `${reasoning}${answer}`;
+              if (keepContent) {
+                if (reasoning) reasoningContent += reasoning;
+                if (answer) answerContent += answer;
+                content += text;
+              }
+              if (deltaCb) {
+                try {
+                  deltaCb({
+                    text: text || undefined,
+                    answer: answer || undefined,
+                    reasoning: reasoning || undefined,
+                    tokenCount: chunkTokenCount,
+                    tFirst,
+                    tLast,
+                    model,
+                  });
+                } catch {
+                  /* non-fatal */
+                }
               }
             }
           }
         }
       }
+      if (!sawDone && !finishReason) throw new Error('流式响应未正常结束：缺少完成标记');
+    } finally {
+      // Release the connection promptly on an SSE error or [DONE], even when
+      // the server keeps its HTTP response open afterwards.
+      await reader.cancel().catch(() => {});
+      reader.releaseLock();
     }
   } catch (err) {
     error = describeStreamFetchError(err);

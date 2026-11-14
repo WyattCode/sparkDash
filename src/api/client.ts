@@ -20,28 +20,57 @@ import type {
 } from "./types";
 
 const BASE = "";
-const TOKEN = (typeof localStorage !== "undefined" && localStorage.getItem("sparkdashToken")) || "";
+import { readAccessToken } from './browserStorage';
+import { translateApiError } from '../i18n/apiErrors';
 
 function authHeaders(): Record<string, string> {
-  return TOKEN ? { Authorization: `Bearer ${TOKEN}` } : {};
+  const token = readAccessToken();
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+export class ApiError extends Error {
+  constructor(message: string, public status: number) { super(message); this.name = 'ApiError'; }
 }
 
 // ─── Generic fetch wrapper ────────────────────────────────
-async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
+export async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
   // Only set Content-Type for requests that actually carry a body. Setting it
   // on GET/DELETE was a no-op but could trigger an unnecessary CORS preflight
   // (OPTIONS) in some proxy setups.
   const headers: Record<string, string> = {};
   if (opts?.body) headers["Content-Type"] = "application/json";
-  const res = await fetch(`${BASE}${path}`, {
-    ...opts,
-    headers: { ...headers, ...authHeaders(), ...(opts?.headers as Record<string, string> | undefined) },
-  });
+  const mutating=!['GET','HEAD','OPTIONS'].includes((opts?.method||'GET').toUpperCase());
+  const timeout=AbortSignal.timeout(mutating&&(path==='/api/operations/verification'||path.endsWith('/shutdown-all'))?240000:30000);
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...opts,
+      signal:opts?.signal?AbortSignal.any([opts.signal,timeout]):timeout,
+      headers: { ...headers, ...authHeaders(), ...(opts?.headers as Record<string, string> | undefined) },
+    });
+  } catch {
+    throw new Error(mutating?'网络连接中断或请求超时，操作结果尚未确认。请先刷新状态，勿重复提交。':'网络请求失败或超时，请检查连接后重试。');
+  }
   if (!res.ok) {
     const body = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(body.error || `HTTP ${res.status}`);
+    const detail=typeof body?.error==='string'?body.error:'';
+    throw new ApiError(translateApiError(detail)||`请求失败（HTTP ${res.status}）`, res.status);
   }
-  return res.json();
+  try{return await res.json();}
+  catch{throw new Error(mutating?'服务响应格式异常，操作结果未确认，请先刷新状态。':'服务返回的数据格式异常，请稍后重试。');}
+}
+
+export function fetchOperations() {
+  return apiFetch<import('../components/OverviewPage/operationsModel').Operations>('/api/operations');
+}
+export function fetchVerification() {
+  return apiFetch<import('../components/OverviewPage/verificationModel').Verification>('/api/operations/verification');
+}
+export function runVerification() {
+  return apiFetch<import('../components/OverviewPage/verificationModel').Verification>('/api/operations/verification',{method:'POST',body:JSON.stringify({confirm:true})});
+}
+export function fetchOperationsHistory(metric: string, minutes: number) {
+  return apiFetch<{generatedAt: number; source?: string; storageError?: string | null; series: import('../components/OverviewPage/operationsModel').Series[]}>(`/api/operations/history?metric=${encodeURIComponent(metric)}&minutes=${minutes}`);
 }
 
 // ─── Sparks CRUD ─────────────────────────────────────────
@@ -285,7 +314,16 @@ export function getShowcase(
     opts?.since != null && Number.isFinite(opts.since)
       ? `?since=${encodeURIComponent(String(opts.since))}`
       : "";
-  return apiFetch(`/api/sparks/${id}/llm/showcase/${sessionId}${q}`);
+  return apiFetch(`/api/sparks/${id}/llm/showcase/${sessionId}${q}`, {signal:AbortSignal.timeout(3000)});
+}
+
+/** Best effort during navigation; heartbeat expiry remains the fallback. */
+export function cancelShowcaseOnUnload(id: string, sessionId: string): void {
+  try {
+    void fetch(`/api/sparks/${encodeURIComponent(id)}/llm/showcase/${encodeURIComponent(sessionId)}`, {
+      method:'DELETE', keepalive:true, headers:authHeaders(),
+    }).catch(() => {});
+  } catch { /* Navigation may already have torn down networking. */ }
 }
 
 export function cancelShowcase(
@@ -384,6 +422,15 @@ export function checkHermes(id: string): Promise<{ success: boolean }> {
 }
 
 // ─── Power management ────────────────────────────────────
+export interface PowerReadiness {
+  ready: boolean;
+  status: 'ready'|'missing-script'|'sudo-denied'|'unavailable';
+  message: string;
+  checkedAt: number;
+}
+export function fetchPowerReadiness(id:string):Promise<PowerReadiness> {
+  return apiFetch(`/api/sparks/${encodeURIComponent(id)}/power-readiness`);
+}
 export interface PowerResult {
   success: boolean;
   message?: string;

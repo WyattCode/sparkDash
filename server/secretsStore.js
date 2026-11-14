@@ -209,6 +209,10 @@ export function loadSecrets() {
  * @param {Map<string, Record<string, string>>} [llmApiKeys]
  */
 export function saveSecrets(passwords, llmApiKeys = new Map()) {
+  // Validate before either deletion or replacement. A load failure must not
+  // silently turn a corrupt file into an empty store on the next UI save.
+  const existing = readExistingSecrets();
+  const otherSections = Object.keys(existing).filter(name => !['version', 'secrets', 'llmApiKeys'].includes(name));
   const hasPasswords = passwords && passwords.size > 0;
   let hasKeys = false;
   if (llmApiKeys) {
@@ -220,7 +224,7 @@ export function saveSecrets(passwords, llmApiKeys = new Map()) {
     }
   }
 
-  if (!hasPasswords && !hasKeys) {
+  if (!hasPasswords && !hasKeys && otherSections.length === 0) {
     if (fs.existsSync(SPARKS_SECRETS_PATH)) {
       try {
         fs.accessSync(SPARKS_SECRETS_PATH, fs.constants.W_OK);
@@ -258,11 +262,56 @@ export function saveSecrets(passwords, llmApiKeys = new Map()) {
   }
 
   const payload =
-    JSON.stringify({ version: 2, secrets, llmApiKeys: llmOut }, null, 2) + "\n";
+    JSON.stringify({ ...existing, version: 2, secrets, llmApiKeys: llmOut }, null, 2) + "\n";
   atomicWrite(SPARKS_SECRETS_PATH, payload, 0o644);
   const keyCount = Object.keys(llmOut).length;
   console.log(
     `[secretsStore] Saved ${Object.keys(secrets).length} SSH password(s)` +
       (keyCount ? `, ${keyCount} LLM API key bundle(s)` : "")
   );
+}
+
+function readExistingSecrets() {
+  let text;
+  try { text = fs.readFileSync(SPARKS_SECRETS_PATH, 'utf8'); }
+  catch (error) {
+    if (error.code === 'ENOENT') return {};
+    throw new Error('凭据文件无法读取，已禁止覆盖。请检查文件权限或从备份恢复。');
+  }
+  let data;
+  try { data = JSON.parse(text); }
+  catch { throw new Error('凭据文件已损坏，已禁止覆盖。请先备份并修复原文件。'); }
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    throw new Error('凭据文件结构无效，已禁止覆盖。');
+  }
+  if (data.version != null && data.version !== 1 && data.version !== 2) {
+    throw new Error('凭据文件版本不受支持，已禁止覆盖。');
+  }
+  for (const name of ['secrets', 'llmApiKeys']) {
+    if (data[name] != null && (typeof data[name] !== 'object' || Array.isArray(data[name]))) {
+      throw new Error('凭据文件分区结构无效，已禁止覆盖。');
+    }
+    if (data[name] && Object.values(data[name]).some(blob => typeof blob !== 'string')) {
+      throw new Error('凭据文件密文结构无效，已禁止覆盖。');
+    }
+  }
+  // A syntactically valid envelope may still contain damaged ciphertext or
+  // entries encrypted by a different key. Loading only the surviving entries
+  // and then saving would otherwise silently discard the unreadable ones.
+  if (['secrets', 'llmApiKeys'].some(name => Object.keys(data[name] || {}).length > 0)) {
+    try {
+      const key = resolveKey();
+      for (const blob of Object.values(data.secrets || {})) decrypt(blob, key);
+      for (const blob of Object.values(data.llmApiKeys || {})) {
+        const keys = JSON.parse(decrypt(blob, key));
+        if (!keys || typeof keys !== 'object' || Array.isArray(keys) ||
+            Object.values(keys).some(value => typeof value !== 'string')) {
+          throw new Error('Invalid API key bundle');
+        }
+      }
+    } catch {
+      throw new Error('已有凭据无法解密或内容异常，已禁止覆盖。请先备份并修复密钥或原文件。');
+    }
+  }
+  return data;
 }

@@ -1,0 +1,26 @@
+sparkDash selective upstream adaptations — 2026-10-22
+
+Original project: https://github.com/MiaAI-Lab/sparkDash
+Copyright 2026 Mia's AI Lab
+
+The existing MIT LICENSE remains applicable to the original MIT codebase.
+Selected additions from upstream 2.x are licensed under Apache-2.0; its text
+is supplied in LICENSE-APACHE-2.0. This is not a wholesale relicensing or
+replacement of the local project.
+
+src/hooks/useOverlayClose.ts and its test are adapted from 0fdae03
+(MiaAI Lab, dialog text-selection fix).
+The probe recovery and per-slot delta changes follow 8d498be and ffe7964
+(Scott Jordan), and the listen-failure / idle serialization safeguards follow
+54c5f2e and 37d24c8 (Scott Jordan).
+The secrets persistence validation is a local implementation of the data-loss
+protection described in upstream 2.70.0. No alert-channel or SMTP feature is added.
+
+server/collectors/roce.js and its test/fixtures are taken from upstream f8b1a48
+(Mia's AI Lab, Apache-2.0), based on the RoCE/RDMA collector introduced in
+fdd023f and subsequent resilience fixes. The local read-only route and UI
+sample only while explicitly expanded; no upstream health thresholds,
+network writes, sudo clock operations or background service are activated.
+
+Local modifications retain existing async locks, Chinese copy, themes,
+foldable layouts and production collection intervals. New tests use fixtures.

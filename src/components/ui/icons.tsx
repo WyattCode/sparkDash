@@ -30,6 +30,14 @@ export function ActivityIcon({ className }: IconProps) {
   );
 }
 
+/** Parallel result panes with a play mark, using the GearIcon stroke system. */
+export function ConcurrentGenerationIcon({ className }: IconProps) {
+  return <svg {...baseProps(className)}>
+    <rect x="3" y="4" width="18" height="16" rx="2" />
+    <path d="M9 4v16M13 9l5 3-5 3Z" />
+  </svg>;
+}
+
 export function DiskIcon({ className }: IconProps) {
   return (
     <svg {...baseProps(className)}>

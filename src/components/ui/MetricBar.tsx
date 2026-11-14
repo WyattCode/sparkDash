@@ -1,11 +1,12 @@
-/** Color band for metric bars — green normal, amber elevated, red critical. */
-export function bandColor(pct: number, base = "bg-accent"): string {
+/** Normal = node data color; warning/danger retain existing thresholds. */
+export function bandColor(pct: number, base = "bg-data"): string {
   if (pct > 85) return "bg-danger";
   if (pct > 60) return "bg-warning";
   return base;
 }
 
 interface MetricBarProps {
+  autoBand?: boolean;
   label: string;
   value: number;
   max: number;
@@ -20,15 +21,16 @@ interface MetricBarProps {
  * overview cards to show usage, temperature, and allocation at a glance.
  */
 export function MetricBar({
+  autoBand = true,
   label,
   value,
   max,
-  color = "bg-accent",
+  color = "bg-data",
   caption,
   subCaption,
 }: MetricBarProps) {
-  const pct = max > 0 ? Math.min(100, Math.round((value / max) * 100)) : 0;
-  const barColor = bandColor(pct, color);
+  const pct = Number.isFinite(value) && Number.isFinite(max) && max > 0 ? Math.max(0,Math.min(100, Math.round((value / max) * 100))) : 0;
+  const barColor = autoBand ? bandColor(pct, color) : color;
 
   return (
     <div className="space-y-1">
@@ -36,7 +38,7 @@ export function MetricBar({
         <span className="text-xs text-muted">{label}</span>
         <span className="font-tabular text-sm text-text">{caption ?? `${pct}%`}</span>
       </div>
-      <div className="h-1.5 overflow-hidden rounded-full bg-border">
+      <div className="metric-bar-track h-1.5 overflow-hidden rounded-full bg-border">
         <div
           className={`metric-bar-fill h-full rounded-full transition-[width] duration-300 ease-out ${barColor}`}
           style={{ ["--bar-pct" as string]: `${pct}%` }}

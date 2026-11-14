@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { translateApiError } from '../../i18n/apiErrors';
 
 export interface TerminalCardProps {
   label: string;
@@ -10,6 +11,10 @@ export interface TerminalCardProps {
   error: string | null;
   onCopy?: () => void;
   copied?: boolean;
+  prompt?: string;
+  decodeTps?: number;
+  tokenCount?: number;
+  ttftMs?: number | null;
 }
 
 function statusClass(status: string): string {
@@ -37,9 +42,14 @@ export function TerminalCard({
   error,
   onCopy,
   copied,
+  prompt,
+  decodeTps = 0,
+  tokenCount = 0,
+  ttftMs = null,
 }: TerminalCardProps) {
   const bodyRef = useRef<HTMLDivElement>(null);
-  const stickToBottom = useRef(true);
+  // Follow live output; saved results must open at the beginning, not the end.
+  const stickToBottom = useRef(status === 'pending' || status === 'streaming');
   const [reasoningOpen, setReasoningOpen] = useState(true);
   const hasReasoning = Boolean(reasoning);
   const scrollKey = `${reasoning.length}:${content.length}:${error ?? ""}`;
@@ -50,50 +60,29 @@ export function TerminalCard({
     el.scrollTop = el.scrollHeight;
   }, [scrollKey, reasoningOpen]);
 
-  const peak = Math.max(peakTokPerSec, liveTokPerSec, 1);
-  const gaugePct = Math.min(100, (liveTokPerSec / peak) * 100);
+  const rate = status === 'streaming' ? liveTokPerSec : decodeTps;
   const empty = !content && !reasoning;
 
   return (
     <article className="showcase-term">
       <header className="showcase-term__header">
         <span className="showcase-term__label" title={label}>
-          {label || "Terminal"}
+          {label || "终端"}
         </span>
-        <span className={`showcase-term__status ${statusClass(status)}`}>{status}</span>
-        <span
-          className="showcase-term__tps font-tabular"
-          title={
-            peakTokPerSec > 0 || liveTokPerSec > 0
-              ? `Live ${liveTokPerSec.toFixed(1)} tok/s · peak ${Math.max(peakTokPerSec, liveTokPerSec).toFixed(1)} tok/s`
-              : undefined
-          }
-        >
-          {liveTokPerSec > 0 || peakTokPerSec > 0 ? (
-            <>
-              {(liveTokPerSec > 0 ? liveTokPerSec : peakTokPerSec).toFixed(0)} tok/s
-              {peakTokPerSec > 0 && (
-                <span className="showcase-term__tps-peak">
-                  {" "}
-                  peak {Math.max(peakTokPerSec, liveTokPerSec).toFixed(0)}
-                </span>
-              )}
-            </>
-          ) : (
-            "—"
-          )}
-        </span>
+        <span className={`showcase-term__status ${statusClass(status)}`}>{({pending:'等待中',streaming:'生成中',completed:'已完成',error:'失败',cancelled:'已停止'} as Record<string,string>)[status]||'未知状态'}</span>
         {onCopy && (
           <button
             type="button"
             className="showcase-term__copy"
             onClick={onCopy}
-            title="Copy this terminal"
+            title="复制此请求的结果"
+            disabled={!content && !reasoning && !error}
           >
-            {copied ? "Copied" : "Copy"}
+            {copied ? "已复制！" : "复制"}
           </button>
         )}
       </header>
+      {prompt && <details className="sw-term-prompt"><summary>查看提示词</summary><p>{prompt}</p></details>}
       <div
         ref={bodyRef}
         className="showcase-term__body"
@@ -105,8 +94,9 @@ export function TerminalCard({
         }}
       >
         {empty && status === "pending" && (
-          <pre className="showcase-term__answer">Waiting…</pre>
+          <pre className="showcase-term__answer">等待中…</pre>
         )}
+        {empty&&status!=='pending'&&(!error||status==='cancelled')&&<p role="status" className="showcase-term__answer">{status==='streaming'?'正在等待首个令牌…':status==='cancelled'?'测试已停止，未收到输出。':status==='completed'?'本次运行已结束，未返回文本内容。':'暂无输出，请查看运行状态。'}</p>}
         {hasReasoning && (
           <div className="showcase-term__reasoning">
             <button
@@ -115,9 +105,9 @@ export function TerminalCard({
               aria-expanded={reasoningOpen}
               onClick={() => setReasoningOpen((o) => !o)}
             >
-              {reasoningOpen ? "▾" : "▸"} Thinking
+              {reasoningOpen ? "收起思考过程" : "展开思考过程"}
               <span className="showcase-term__reasoning-meta">
-                {reasoning.length.toLocaleString()} chars
+              {reasoning.length.toLocaleString()} 字符
               </span>
             </button>
             {reasoningOpen && (
@@ -132,15 +122,12 @@ export function TerminalCard({
             <pre className="showcase-term__answer">…</pre>
           )
         )}
-        {error ? <pre className="showcase-term__error">{`[error] ${error}`}</pre> : null}
+        {error && status !== "cancelled" ? <pre className="showcase-term__error">{`[错误] ${translateApiError(error)}`}</pre> : null}
       </div>
       <footer className="showcase-term__footer">
-        <div className="showcase-gauge" aria-hidden="true">
-          <div
-            className="showcase-gauge__fill"
-            style={{ ["--bar-pct" as string]: `${gaugePct}%` }}
-          />
-        </div>
+        <span>{status === 'streaming' ? '当前' : '平均'} {status === 'pending' || (!rate && status !== 'streaming') ? '—' : rate.toFixed(1) + ' tok/s'}</span>
+        <span>首字 {ttftMs == null ? '—' : (ttftMs / 1000).toFixed(2) + ' s'}</span>
+        <span>{tokenCount.toLocaleString()} tok</span>
       </footer>
     </article>
   );
