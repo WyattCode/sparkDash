@@ -8,8 +8,10 @@ const BASE = 'http://127.0.0.1:8888';
 
 export async function productionBoot(backend) {
   // Native model API does not report a verifiable engine boot id.
-  if(backend==='tensorfold')return null;
-  const args = ['docker', 'inspect', '--format', '{{.State.Running}} {{.State.StartedAt}}', backend === 'tensorfold' ? 'glm53-flash-tf' : 'dsv41-head'];
+  if (backend === 'tensorfold') return null;
+  const container = process.env.SPARKDASH_VERIFICATION_CONTAINER || 'dsv41-head';
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9_.-]*$/.test(container)) return null;
+  const args = ['docker', 'inspect', '--format', '{{.State.Running}} {{.State.StartedAt}}', container];
   const {stdout} = await exec('nsenter', ['-t','1','-m','--',...args], {timeout:5000,maxBuffer:4096});
   const [running, at] = stdout.trim().split(/\s+/);
   return running === 'true' && Number.isFinite(Date.parse(at)) ? new Date(at).toISOString() : null;
@@ -19,7 +21,7 @@ export function recordCurrent(record, boot, model) {
   return !!record && !!boot && record.boot === boot && record.model === model;
 }
 
-export function createServiceVerification({file, getSpark, snapshots, fetchImpl = fetch, getBoot = productionBoot, imageFile = '/host/root/home/wyatt/deepseek-v4-flash-dspark/results/smoke-solid-red.jpg'}) {
+export function createServiceVerification({file, getSpark, snapshots, nodeName = process.env.SPARKDASH_VERIFICATION_NODE || '', fetchImpl = fetch, getBoot = productionBoot, imageFile = '/host/root/home/wyatt/deepseek-v4-flash-dspark/results/smoke-solid-red.jpg'}) {
   let cache = null, pending = null, running = false, lastRun = 0;
   // Accept the served model name or a model path whose basename matches it, so
   // the adapter still targets production when the probe reports the on-disk
@@ -32,7 +34,7 @@ export function createServiceVerification({file, getSpark, snapshots, fetchImpl 
     return base === MODEL;
   }
   function target() {
-    const candidates = snapshots().filter(s=>s.isLocal&&s.role==='head').flatMap(s=>s.metrics.llm.map((l,i)=>({s,l,port:s.llmPorts?.[i]??s.llmPort}))).filter(t=>t.port===8888&&t.l.modelId);
+    const candidates = snapshots().filter(s=>s.isLocal&&s.role==='head'&&(!nodeName||s.name===nodeName)).flatMap(s=>s.metrics.llm.map((l,i)=>({s,l,port:s.llmPorts?.[i]??s.llmPort}))).filter(t=>t.port===8888&&t.l.modelId);
     if(candidates.length!==1)return null;
     const {s,l,port}=candidates[0];
     return {node:s.name,model:l.modelId,backend:l.backend,port,key:getSpark(s.id)?.llmApiKeys?.[String(port)]||''};
