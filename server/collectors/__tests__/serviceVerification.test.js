@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {createServiceVerification,recordCurrent,registerVerificationRoutes} from '../../serviceVerification.js';
+import {createServiceVerification,recordCurrent,registerVerificationRoutes,productionBoot} from '../../serviceVerification.js';
 const MODEL='deepseek-v4.1-flash',BOOT='2026-09-13T13:59:51.504Z';
 function fixture(overrides={}) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'verify-test-'));
@@ -81,3 +81,21 @@ for (const scenario of ['stale','down','busy','different-instance','missing','in
     try {await assert.rejects(g.service.verify(),e=>e.status===409);assert.equal(f.calls.filter(c=>c.opts.method==='POST').length,0);}finally{f.cleanup();g.cleanup();}
   });
 }
+
+test('an explicit verification node never falls back to a different local head', async()=>{
+  const absent=fixture({nodeName:'not-the-local-head'});
+  try{const state=await absent.service.status();assert.equal(state.supported,false);assert.equal(absent.calls.length,0);}finally{absent.cleanup();}
+  const present=fixture({nodeName:'spark-b5e5'});
+  try{const state=await present.service.status();assert.equal(state.auth.status,'verified');assert.equal(present.calls.length,3);}finally{present.cleanup();}
+});
+test('native boot remains unverifiable and invalid container configuration is not executed',async()=>{
+  const previous=process.env.SPARKDASH_VERIFICATION_CONTAINER;
+  try{
+    process.env.SPARKDASH_VERIFICATION_CONTAINER='bad/container';
+    assert.equal(await productionBoot('tensorfold'),null);
+    assert.equal(await productionBoot('deepseek'),null);
+  }finally{
+    if(previous===undefined)delete process.env.SPARKDASH_VERIFICATION_CONTAINER;
+    else process.env.SPARKDASH_VERIFICATION_CONTAINER=previous;
+  }
+});
